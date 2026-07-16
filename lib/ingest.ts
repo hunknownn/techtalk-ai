@@ -14,7 +14,7 @@ export interface IngestedArtifact {
  * 스킬 동작(파일 쓰기)을 바꾸지 않고 웹에서 서빙하기 위한 브리지.
  */
 export function ingestNewArtifacts(
-  sessionId: number,
+  sessionId: number | null,
   sinceMs: number
 ): IngestedArtifact[] {
   if (!fs.existsSync(OUTPUT_DIR)) return [];

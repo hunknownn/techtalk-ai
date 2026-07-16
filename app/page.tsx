@@ -125,6 +125,9 @@ export default function ChatPage() {
       <header className="mb-3 flex items-center justify-between">
         <h1 className="text-xl font-bold">techtalk</h1>
         <nav className="flex gap-3 text-sm">
+          <a href="/dashboard" className="text-blue-500 hover:underline">
+            대시보드
+          </a>
           <a href="/artifacts" className="text-blue-500 hover:underline">
             산출물
           </a>
