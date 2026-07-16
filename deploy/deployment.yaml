@@ -20,12 +20,14 @@ spec:
         fsGroup: 1001
       containers:
         - name: web
-          image: nuhgnod/techtalk-web:0.1.0
+          image: nuhgnod/techtalk-web:0.1.1
           ports:
             - containerPort: 3000
           env:
             - name: TECHTALK_DATA_DIR
               value: /data
+            - name: CLAUDE_CODE_PATH
+              value: /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
           volumeMounts:
             # $HOME 전체를 PVC로: .claude.json(인증)과 ~/techtalk(산출물)이 여기 삶
             - name: claude-auth

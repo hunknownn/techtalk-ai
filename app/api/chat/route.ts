@@ -88,6 +88,11 @@ export async function POST(req: NextRequest) {
             // ~/.claude/skills 의 techtalk 스킬을 로컬과 동일하게 로드
             settingSources: ["user"],
             includePartialMessages: true,
+            // 컨테이너에선 standalone 번들이 SDK 네이티브 바이너리를 누락하므로
+            // 이미지에 설치된 글로벌 CLI를 명시 (로컬 개발은 미설정 → SDK 기본값)
+            ...(process.env.CLAUDE_CODE_PATH
+              ? { pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_PATH }
+              : {}),
           },
         });
 
