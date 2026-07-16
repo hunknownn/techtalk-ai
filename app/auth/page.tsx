@@ -19,7 +19,15 @@ export default function AuthPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setAdminCode(localStorage.getItem("techtalk-admin-code") ?? "");
+    const saved = localStorage.getItem("techtalk-admin-code") ?? "";
+    setAdminCode(saved);
+    // 저장된 관리 코드가 있으면 접속 즉시 상태 표시 (진행 중 재인증 URL 포함)
+    if (saved) {
+      fetch("/api/auth/status", { headers: { "x-admin-code": saved } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d && setStatus(d))
+        .catch(() => {});
+    }
   }, []);
 
   const headers = useCallback(
