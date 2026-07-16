@@ -1,65 +1,229 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useRef, useState } from "react";
+
+type Mode = "produce" | "socratic" | "drill";
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface ArtifactLink {
+  id: number;
+  title: string;
+  kind: "html" | "note";
+}
+
+const MODES: { key: Mode; label: string; desc: string }[] = [
+  { key: "produce", label: "① 바로산출물", desc: "전문가 토론 HTML + 학습노트 생성" },
+  { key: "socratic", label: "② 소크라테스", desc: "힌트만으로 원리를 스스로 재발명" },
+  { key: "drill", label: "③ 실무", desc: "함정 섞인 시나리오로 판단 훈련" },
+];
+
+export default function ChatPage() {
+  const [mode, setMode] = useState<Mode>("socratic");
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [artifacts, setArtifacts] = useState<ArtifactLink[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [toolStatus, setToolStatus] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () =>
+    requestAnimationFrame(() =>
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    );
+
+  async function send() {
+    const message = input.trim();
+    if (!message || busy) return;
+    setInput("");
+    setBusy(true);
+    setToolStatus(null);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: message },
+      { role: "assistant", content: "" },
+    ]);
+    scrollToBottom();
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, mode, message }),
+      });
+      if (!res.ok || !res.body) {
+        throw new Error(`요청 실패 (${res.status})`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const raw of events) {
+          if (!raw.startsWith("data: ")) continue;
+          const ev = JSON.parse(raw.slice(6));
+
+          if (ev.type === "text") {
+            setToolStatus(null);
+            setMessages((prev) => {
+              const next = [...prev];
+              next[next.length - 1] = {
+                role: "assistant",
+                content: next[next.length - 1].content + ev.text,
+              };
+              return next;
+            });
+            scrollToBottom();
+          } else if (ev.type === "tool") {
+            setToolStatus(`도구 실행 중: ${ev.name}`);
+          } else if (ev.type === "done") {
+            setSessionId(ev.sessionId);
+            if (ev.artifacts?.length) {
+              setArtifacts((prev) => [...prev, ...ev.artifacts]);
+            }
+          } else if (ev.type === "error") {
+            throw new Error(ev.message);
+          }
+        }
+      }
+    } catch (e) {
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = {
+          role: "assistant",
+          content: `⚠️ 오류: ${e instanceof Error ? e.message : String(e)}`,
+        };
+        return next;
+      });
+    } finally {
+      setBusy(false);
+      setToolStatus(null);
+      scrollToBottom();
+    }
+  }
+
+  function reset() {
+    setSessionId(null);
+    setMessages([]);
+    setArtifacts([]);
+    setToolStatus(null);
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto flex h-dvh max-w-3xl flex-col p-4">
+      <header className="mb-3 flex items-center justify-between">
+        <h1 className="text-xl font-bold">techtalk</h1>
+        <nav className="flex gap-3 text-sm">
+          <a href="/artifacts" className="text-blue-500 hover:underline">
+            산출물
+          </a>
+          <button onClick={reset} className="text-neutral-500 hover:underline">
+            새 대화
+          </button>
+        </nav>
+      </header>
+
+      {/* 모드 선택: 세션 시작 전에만 변경 가능 (스킬의 '방식 먼저 확정' 규약) */}
+      <div className="mb-3 grid grid-cols-3 gap-2">
+        {MODES.map((m) => (
+          <button
+            key={m.key}
+            disabled={sessionId !== null}
+            onClick={() => setMode(m.key)}
+            className={`rounded-lg border p-2 text-left text-xs transition ${
+              mode === m.key
+                ? "border-blue-500 bg-blue-500/10"
+                : "border-neutral-300 dark:border-neutral-700"
+            } ${sessionId !== null ? "opacity-50" : "hover:border-blue-400"}`}
+          >
+            <div className="font-semibold">{m.label}</div>
+            <div className="mt-0.5 text-neutral-500">{m.desc}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 space-y-4 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        {messages.length === 0 && (
+          <p className="text-sm text-neutral-500">
+            주제를 입력하면 선택한 방식으로 시작합니다. (예: &quot;B+Tree
+            인덱스&quot;, &quot;kafka 컨슈머 그룹 리밸런싱&quot;)
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        )}
+        {messages.map((m, i) => (
+          <div
+            key={i}
+            className={`whitespace-pre-wrap text-sm leading-relaxed ${
+              m.role === "user"
+                ? "ml-auto max-w-[85%] rounded-lg bg-blue-500/10 p-3"
+                : ""
+            }`}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            {m.content ||
+              (busy && i === messages.length - 1 ? (
+                <span className="text-neutral-400">
+                  {toolStatus ?? "생각 중…"}
+                </span>
+              ) : null)}
+          </div>
+        ))}
+        {artifacts.length > 0 && (
+          <div className="rounded-lg border border-green-500/40 bg-green-500/5 p-3 text-sm">
+            <div className="mb-1 font-semibold">생성된 산출물</div>
+            {artifacts.map((a) => (
+              <a
+                key={a.id}
+                href={`/artifacts/${a.id}`}
+                target="_blank"
+                className="block text-blue-500 hover:underline"
+              >
+                {a.kind === "html" ? "🌐" : "📝"} {a.title}
+              </a>
+            ))}
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <form
+        className="mt-3 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          rows={2}
+          placeholder={busy ? "응답 대기 중…" : "메시지 입력 (Enter로 전송)"}
+          disabled={busy}
+          className="flex-1 resize-none rounded-lg border border-neutral-300 bg-transparent p-3 text-sm outline-none focus:border-blue-500 dark:border-neutral-700"
+        />
+        <button
+          type="submit"
+          disabled={busy || !input.trim()}
+          className="rounded-lg bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-40"
+        >
+          전송
+        </button>
+      </form>
+    </main>
   );
 }
