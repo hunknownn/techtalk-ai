@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Mode = "produce" | "socratic" | "drill";
 
@@ -14,6 +14,15 @@ interface ArtifactLink {
   title: string;
   kind: "html" | "note";
 }
+
+interface SessionSummary {
+  id: number;
+  topic: string | null;
+  mode: Mode;
+  created_at: string;
+}
+
+const LAST_SESSION_KEY = "techtalk-last-session";
 
 const MODES: { key: Mode; label: string; desc: string }[] = [
   { key: "produce", label: "① 바로산출물", desc: "전문가 토론 HTML + 학습노트 생성" },
@@ -29,7 +38,33 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // 세션 복원: DB에 저장된 이력을 불러와 이어간다 (SDK resume으로 맥락 유지)
+  async function loadSession(id: number) {
+    const res = await fetch(`/api/sessions/${id}`);
+    if (!res.ok) {
+      localStorage.removeItem(LAST_SESSION_KEY);
+      return;
+    }
+    const data = await res.json();
+    setSessionId(data.session.id);
+    setMode(data.session.mode);
+    setMessages(data.messages);
+    setArtifacts(data.artifacts);
+    localStorage.setItem(LAST_SESSION_KEY, String(data.session.id));
+    scrollToBottom();
+  }
+
+  useEffect(() => {
+    fetch("/api/sessions")
+      .then((r) => r.json())
+      .then((d) => setSessions(d.sessions ?? []));
+    const last = localStorage.getItem(LAST_SESSION_KEY);
+    if (last) loadSession(Number(last));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const scrollToBottom = () =>
     requestAnimationFrame(() =>
@@ -89,6 +124,7 @@ export default function ChatPage() {
             setToolStatus(`도구 실행 중: ${ev.name}`);
           } else if (ev.type === "done") {
             setSessionId(ev.sessionId);
+            localStorage.setItem(LAST_SESSION_KEY, String(ev.sessionId));
             if (ev.artifacts?.length) {
               setArtifacts((prev) => [...prev, ...ev.artifacts]);
             }
@@ -118,13 +154,31 @@ export default function ChatPage() {
     setMessages([]);
     setArtifacts([]);
     setToolStatus(null);
+    localStorage.removeItem(LAST_SESSION_KEY);
   }
 
   return (
     <main className="mx-auto flex h-dvh max-w-3xl flex-col p-4">
       <header className="mb-3 flex items-center justify-between">
         <h1 className="text-xl font-bold">techtalk</h1>
-        <nav className="flex gap-3 text-sm">
+        <nav className="flex items-center gap-3 text-sm">
+          {sessions.length > 0 && (
+            <select
+              value={sessionId ?? ""}
+              disabled={busy}
+              onChange={(e) => {
+                if (e.target.value) loadSession(Number(e.target.value));
+              }}
+              className="max-w-40 rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+            >
+              <option value="">이전 세션…</option>
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  [{s.mode}] {(s.topic ?? `#${s.id}`).slice(0, 30)}
+                </option>
+              ))}
+            </select>
+          )}
           <a href="/dashboard" className="text-blue-500 hover:underline">
             대시보드
           </a>
