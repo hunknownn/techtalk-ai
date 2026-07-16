@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: techtalk-ingress
+  namespace: techtalk
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # SSE 스트리밍이 프록시 버퍼링·타임아웃에 끊기지 않도록
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - techtalk.gold-grit.com
+      secretName: techtalk-tls
+  rules:
+    - host: techtalk.gold-grit.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: techtalk-web
+                port:
+                  number: 80

@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: techtalk-web
+  namespace: techtalk
+spec:
+  # 인증 토큰·SQLite가 단일 PVC에 묶이므로 수평 확장 금지 (개인용 설계)
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: techtalk-web
+  template:
+    metadata:
+      labels:
+        app: techtalk-web
+    spec:
+      securityContext:
+        fsGroup: 1001
+      containers:
+        - name: web
+          image: nuhgnod/techtalk-web:0.1.0
+          ports:
+            - containerPort: 3000
+          env:
+            - name: TECHTALK_DATA_DIR
+              value: /data
+          volumeMounts:
+            # $HOME 전체를 PVC로: .claude.json(인증)과 ~/techtalk(산출물)이 여기 삶
+            - name: claude-auth
+              mountPath: /home/app
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              # Claude Code 런타임 서브프로세스 여유분 포함
+              cpu: "2"
+              memory: 3Gi
+      volumes:
+        - name: claude-auth
+          persistentVolumeClaim:
+            claimName: claude-auth
+        - name: data
+          persistentVolumeClaim:
+            claimName: techtalk-data

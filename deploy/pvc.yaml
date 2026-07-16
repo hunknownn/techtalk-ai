@@ -1,0 +1,25 @@
+# PVC① 구독 인증 저장소: Claude Code가 자동 갱신하는 OAuth 토큰이 파드 재시작에도 유지되는 곳
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claude-auth
+  namespace: techtalk
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+# PVC② 데이터: SQLite DB (산출물은 DB에 수집되므로 홈의 ~/techtalk 원본과 이중 보관)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: techtalk-data
+  namespace: techtalk
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi

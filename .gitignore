@@ -42,3 +42,6 @@ next-env.d.ts
 
 # techtalk local data
 /data/
+
+# 외부 도구 캐시
+.firecrawl/
