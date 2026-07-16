@@ -33,6 +33,9 @@ WORKDIR /app
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+# Next 트레이싱이 node-pty의 네이티브 빌드(build/Release/pty.node, spawn-helper)를
+# 누락하므로 빌더에서 컴파일된 완전본으로 덮어쓴다
+COPY --from=builder /app/node_modules/node-pty ./node_modules/node-pty
 
 # 스킬 원본은 이미지에 보관, 기동 시 $HOME으로 동기화 (PVC가 홈을 덮는 문제 회피)
 COPY skills /opt/skills
