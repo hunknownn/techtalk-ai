@@ -3,6 +3,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import fs from "node:fs";
 import { db, OUTPUT_DIR } from "@/lib/db";
 import { ingestNewArtifacts } from "@/lib/ingest";
+import { readLongLivedToken } from "@/lib/reauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,6 +78,9 @@ export async function POST(req: NextRequest) {
       let assistantText = "";
       let sdkSessionId = session.sdk_session_id;
 
+      // 웹 재인증으로 발급한 장기 토큰이 있으면 기본 인증보다 우선 사용
+      const longLivedToken = readLongLivedToken();
+
       try {
         const q = query({
           prompt,
@@ -92,6 +96,14 @@ export async function POST(req: NextRequest) {
             // 이미지에 설치된 글로벌 CLI를 명시 (로컬 개발은 미설정 → SDK 기본값)
             ...(process.env.CLAUDE_CODE_PATH
               ? { pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_PATH }
+              : {}),
+            ...(longLivedToken
+              ? {
+                  env: {
+                    ...(process.env as Record<string, string>),
+                    CLAUDE_CODE_OAUTH_TOKEN: longLivedToken,
+                  },
+                }
               : {}),
           },
         });

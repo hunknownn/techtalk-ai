@@ -28,6 +28,14 @@ spec:
               value: /data
             - name: CLAUDE_CODE_PATH
               value: /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
+            # 재인증 페이지 보호 코드. 시크릿은 git에 없으므로 수동 1회 생성:
+            # kubectl -n techtalk create secret generic techtalk-admin --from-literal=code=<코드>
+            - name: TECHTALK_ADMIN_CODE
+              valueFrom:
+                secretKeyRef:
+                  name: techtalk-admin
+                  key: code
+                  optional: true
           volumeMounts:
             # $HOME 전체를 PVC로: .claude.json(인증)과 ~/techtalk(산출물)이 여기 삶
             - name: claude-auth

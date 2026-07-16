@@ -131,6 +131,9 @@ export default function ChatPage() {
           <a href="/artifacts" className="text-blue-500 hover:underline">
             산출물
           </a>
+          <a href="/auth" className="text-neutral-500 hover:underline">
+            인증
+          </a>
           <button onClick={reset} className="text-neutral-500 hover:underline">
             새 대화
           </button>
