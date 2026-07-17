@@ -107,8 +107,13 @@ export default function ChatPage() {
         return;
       }
       const d = await r.json();
-      // 구독 연결됐는데 온보딩 미완료면 주제 설정으로
-      if (d.subscriptionBound && !d.onboarded) {
+      // 미연결이면 구독 연결부터 (채팅·주제 트리를 노출하지 않음)
+      if (!d.subscriptionBound) {
+        window.location.href = "/auth";
+        return;
+      }
+      // 연결됐는데 온보딩 미완료면 주제 설정으로
+      if (!d.onboarded) {
         window.location.href = "/onboarding";
         return;
       }

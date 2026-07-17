@@ -17,12 +17,12 @@
 - · GC 알고리즘과 stop-the-world
 - · 동시성: race condition, deadlock, livelock
 - · 자료구조 선택과 시간/공간 복잡도 트레이드오프
-- ✅ 확률적 자료구조: 블룸 필터 (FP/FN 비대칭, m·n·k 사이징, Cuckoo/Counting/Scalable)
+- · 확률적 자료구조: 블룸 필터 (FP/FN 비대칭, m·n·k 사이징, Cuckoo/Counting/Scalable)
 - · 직렬화 포맷 (JSON/Protobuf/Avro)
 
 ### 중주제: DB & 스토리지 (Databases & Storage)
-- ✅ 인덱스 내부 구조 (B-Tree vs LSM-Tree)
-- ✅ 트랜잭션 격리 수준과 이상 현상 (dirty/non-repeatable/phantom)
+- · 인덱스 내부 구조 (B-Tree vs LSM-Tree)
+- · 트랜잭션 격리 수준과 이상 현상 (dirty/non-repeatable/phantom)
 - · 낙관적 락 vs 비관적 락
 - · MVCC와 vacuum
 - · 정규화 vs 비정규화, 언제 깨뜨리나
@@ -101,7 +101,7 @@
 - · 로드밸런서 L4 vs L7
 
 ### 중주제: Architecture (아키텍처)
-- ✅ MSA 어드민/백오피스: API Aggregation vs Copied DB (CDC/Event)
+- · MSA 어드민/백오피스: API Aggregation vs Copied DB (CDC/Event)
 - · 모놀리식 vs MSA, 분리 기준
 - · 서비스 경계(bounded context)를 어디서 자르나
 - · CQRS와 read model 분리
