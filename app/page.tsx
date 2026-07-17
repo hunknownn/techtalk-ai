@@ -78,8 +78,20 @@ export default function ChatPage() {
 
   useEffect(() => {
     refreshSessions();
+    // 대시보드 등에서 진입: ?session=<id> 세션 열기, ?topic=<주제> 입력 프리필
+    const params = new URLSearchParams(window.location.search);
+    const sessionParam = params.get("session");
+    const topicParam = params.get("topic");
+    if (sessionParam || topicParam) {
+      window.history.replaceState(null, "", "/");
+    }
+    if (sessionParam) {
+      loadSession(Number(sessionParam));
+      return;
+    }
+    if (topicParam) setInput(topicParam);
     const last = localStorage.getItem(LAST_SESSION_KEY);
-    if (last) loadSession(Number(last));
+    if (last && !topicParam) loadSession(Number(last));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

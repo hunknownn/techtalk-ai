@@ -2,6 +2,8 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { parseTaxonomy } from "@/lib/taxonomy";
 import { RescanButton } from "./rescan-button";
+import { SessionList } from "./session-list";
+import { CoverageTree } from "./coverage-tree";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +27,6 @@ interface RepeatRow {
   cnt: number;
 }
 
-const MODE_LABEL: Record<string, string> = {
-  produce: "바로산출물",
-  socratic: "소크라테스",
-  drill: "실무",
-};
-
 export default function DashboardPage() {
   const tree = parseTaxonomy();
   const totalLeaves = tree.flatMap((t) => t.mids.flatMap((m) => m.leaves));
@@ -38,7 +34,7 @@ export default function DashboardPage() {
 
   const recentSessions = db
     .prepare(
-      "SELECT id, topic, mode, created_at FROM sessions ORDER BY id DESC LIMIT 10"
+      "SELECT id, topic, mode, created_at FROM sessions WHERE deleted = 0 ORDER BY id DESC LIMIT 20"
     )
     .all() as SessionRow[];
   const recentArtifacts = db
@@ -92,44 +88,10 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* 영역별 커버리지 */}
+      {/* 영역별 커버리지 (폴더 구조, 소주제 클릭 → 채팅 시작) */}
       <section className="mb-8">
         <h2 className="mb-3 font-semibold">영역별 커버리지</h2>
-        <div className="space-y-4">
-          {tree.map((top) => (
-            <div
-              key={top.name}
-              className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
-            >
-              <h3 className="mb-2 text-sm font-semibold">{top.name}</h3>
-              <div className="space-y-2">
-                {top.mids.map((mid) => {
-                  const covered = mid.leaves.filter((l) => l.covered).length;
-                  const pct =
-                    mid.leaves.length > 0
-                      ? (covered / mid.leaves.length) * 100
-                      : 0;
-                  return (
-                    <div key={mid.name} className="flex items-center gap-3">
-                      <span className="w-56 shrink-0 truncate text-xs text-neutral-600 dark:text-neutral-400">
-                        {mid.name}
-                      </span>
-                      <div className="h-1.5 flex-1 overflow-hidden rounded bg-neutral-200 dark:bg-neutral-800">
-                        <div
-                          className="h-full bg-emerald-500"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="w-12 shrink-0 text-right text-xs text-neutral-500">
-                        {covered}/{mid.leaves.length}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        <CoverageTree />
       </section>
 
       {/* 다음 추천 */}
@@ -137,34 +99,24 @@ export default function DashboardPage() {
         <h2 className="mb-3 font-semibold">다음 추천 주제</h2>
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {recommendations.map((r) => (
-            <li
-              key={r.name}
-              className="rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-800"
-            >
-              {r.name}
+            <li key={r.name}>
+              <Link
+                href={`/?topic=${encodeURIComponent(r.name)}`}
+                title="클릭하면 이 주제로 채팅을 시작합니다"
+                className="block rounded-lg border border-neutral-200 p-3 text-sm hover:border-blue-400 hover:bg-blue-500/5 dark:border-neutral-800"
+              >
+                {r.name}
+              </Link>
             </li>
           ))}
         </ul>
       </section>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {/* 최근 세션 */}
+        {/* 최근 세션 (클릭 → 이어가기, ✕ → 삭제) */}
         <section>
           <h2 className="mb-3 font-semibold">최근 세션</h2>
-          {recentSessions.length === 0 ? (
-            <p className="text-sm text-neutral-500">아직 세션이 없습니다.</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {recentSessions.map((s) => (
-                <li key={s.id} className="flex justify-between gap-2">
-                  <span className="truncate">{s.topic ?? `세션 #${s.id}`}</span>
-                  <span className="shrink-0 text-xs text-neutral-500">
-                    {MODE_LABEL[s.mode] ?? s.mode} · {s.created_at.slice(0, 10)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <SessionList sessions={recentSessions} />
         </section>
 
         {/* 반복 학습 */}
