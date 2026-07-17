@@ -63,7 +63,16 @@ export default function ChatPage() {
     username: string;
     subscriptionBound: boolean;
   } | null>(null);
+  // 전송 실패 시 복구용: 배너 표시 + 재시도할 메시지 보관
+  const [sendError, setSendError] = useState<{
+    message: string;
+    failed: string;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
+  // 사용자가 위로 스크롤해 읽는 중이면 자동 스크롤을 멈춘다
+  const stickToBottomRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
 
   // 세션 복원: DB에 저장된 이력을 불러와 이어간다 (SDK resume으로 맥락 유지)
   async function loadSession(id: number) {
@@ -82,8 +91,10 @@ export default function ChatPage() {
     fetchRelated(data.session.topic ?? "");
     // 세션 주제가 트리 소주제와 정확히 일치하면 트리에서도 표시됨
     setSelectedTopic(data.session.topic ?? null);
+    setSendError(null);
     localStorage.setItem(LAST_SESSION_KEY, String(data.session.id));
-    scrollToBottom();
+    stickToBottomRef.current = true;
+    scrollToBottom(true);
   }
 
   const refreshSessions = () =>
@@ -132,6 +143,8 @@ export default function ChatPage() {
       window.history.replaceState(null, "", "/");
     }
     if (sessionParam) {
+      // 마운트 시 1회 세션 복원(fetch 후 setState) — 동기 setState 아님
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadSession(Number(sessionParam));
       return;
     }
@@ -152,29 +165,44 @@ export default function ChatPage() {
     refreshSessions();
   }
 
-  const scrollToBottom = () =>
+  const scrollToBottom = (force = false) => {
+    if (!force && !stickToBottomRef.current) return;
     requestAnimationFrame(() =>
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     );
+  };
 
-  async function send() {
-    const message = input.trim();
+  const handleScroll = () => {
+    const el = scrollBoxRef.current;
+    if (!el) return;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  async function send(overrideMessage?: string) {
+    const message = (overrideMessage ?? input).trim();
     if (!message || busy) return;
-    setInput("");
+    if (overrideMessage === undefined || input.trim() === message) setInput("");
     setBusy(true);
     setToolStatus(null);
+    setSendError(null);
     setMessages((prev) => [
       ...prev,
       { role: "user", content: message },
       { role: "assistant", content: "" },
     ]);
-    scrollToBottom();
+    stickToBottomRef.current = true;
+    scrollToBottom(true);
 
+    const ac = new AbortController();
+    abortRef.current = ac;
+    let receivedAny = false;
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, mode, message, model }),
+        signal: ac.signal,
       });
       if (!res.ok || !res.body) {
         throw new Error(`요청 실패 (${res.status})`);
@@ -196,6 +224,7 @@ export default function ChatPage() {
           const ev = JSON.parse(raw.slice(6));
 
           if (ev.type === "text") {
+            receivedAny = true;
             setToolStatus(null);
             setMessages((prev) => {
               const next = [...prev];
@@ -225,15 +254,22 @@ export default function ChatPage() {
         }
       }
     } catch (e) {
-      setMessages((prev) => {
-        const next = [...prev];
-        next[next.length - 1] = {
-          role: "assistant",
-          content: `⚠️ 오류: ${e instanceof Error ? e.message : String(e)}`,
-        };
-        return next;
-      });
+      if (ac.signal.aborted) {
+        // 사용자가 중단: 부분 응답은 유지, 빈 말풍선만 제거
+        if (!receivedAny) setMessages((prev) => prev.slice(0, -1));
+      } else {
+        // 실패: 아무 응답도 없으면 말풍선을 걷어내고 입력을 복원해 다시 보낼 수 있게 한다
+        if (!receivedAny) {
+          setMessages((prev) => prev.slice(0, -2));
+          setInput((cur) => (cur.trim() ? cur : message));
+        }
+        setSendError({
+          message: e instanceof Error ? e.message : String(e),
+          failed: message,
+        });
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
       setToolStatus(null);
       scrollToBottom();
@@ -245,6 +281,7 @@ export default function ChatPage() {
     setMessages([]);
     setArtifacts([]);
     setToolStatus(null);
+    setSendError(null);
     setContextTokens(null);
     setRelated([]);
     setSelectedTopic(null);
@@ -403,7 +440,12 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="slim-scroll flex-1 space-y-4 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+      <div
+        ref={scrollBoxRef}
+        onScroll={handleScroll}
+        aria-live="polite"
+        className="slim-scroll flex-1 space-y-4 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
+      >
         {messages.length === 0 && (
           <p className="text-sm text-neutral-500">
             주제를 입력하면 선택한 방식으로 시작합니다. (예: &quot;B+Tree
@@ -445,6 +487,21 @@ export default function ChatPage() {
             ))}
           </div>
         )}
+        {sendError && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
+            <span className="min-w-0 truncate" title={sendError.message}>
+              오류: {sendError.message}
+            </span>
+            <button
+              onClick={() =>
+                input.trim() ? send() : send(sendError.failed)
+              }
+              className="shrink-0 rounded border border-red-400 px-2.5 py-1 text-xs text-red-500 hover:bg-red-500/10"
+            >
+              재시도
+            </button>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -467,17 +524,29 @@ export default function ChatPage() {
             }
           }}
           rows={2}
-          placeholder={busy ? "응답 대기 중…" : "메시지 입력 (Enter로 전송)"}
-          disabled={busy}
+          placeholder="메시지 입력 (Enter로 전송)"
           className="flex-1 resize-none rounded-lg border border-neutral-300 bg-transparent p-3 text-sm outline-none focus:border-blue-500 dark:border-neutral-700"
         />
-        <button
-          type="submit"
-          disabled={busy || !input.trim() || (me !== null && !me.subscriptionBound)}
-          className="rounded-lg bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-40"
-        >
-          전송
-        </button>
+        {busy ? (
+          <button
+            type="button"
+            onClick={() => abortRef.current?.abort()}
+            className="rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            title="응답 생성을 중단합니다 (받은 부분까지는 유지)"
+          >
+            중단
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={
+              !input.trim() || (me !== null && !me.subscriptionBound)
+            }
+            className="rounded-lg bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-40"
+          >
+            전송
+          </button>
+        )}
         </form>
       </main>
 
