@@ -55,6 +55,7 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [model, setModel] = useState("default");
   const [related, setRelated] = useState<RelatedArtifact[]>([]);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [contextTokens, setContextTokens] = useState<number | null>(null);
   const [hudKey, setHudKey] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -74,6 +75,8 @@ export default function ChatPage() {
     setModel(data.session.model ?? "default");
     setContextTokens(data.session.context_tokens ?? null);
     fetchRelated(data.session.topic ?? "");
+    // 세션 주제가 트리 소주제와 정확히 일치하면 트리에서도 표시됨
+    setSelectedTopic(data.session.topic ?? null);
     localStorage.setItem(LAST_SESSION_KEY, String(data.session.id));
     scrollToBottom();
   }
@@ -105,7 +108,10 @@ export default function ChatPage() {
       loadSession(Number(sessionParam));
       return;
     }
-    if (topicParam) setInput(topicParam);
+    if (topicParam) {
+      setInput(topicParam);
+      setSelectedTopic(topicParam);
+    }
     const last = localStorage.getItem(LAST_SESSION_KEY);
     if (last && !topicParam) loadSession(Number(last));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -214,6 +220,7 @@ export default function ChatPage() {
     setToolStatus(null);
     setContextTokens(null);
     setRelated([]);
+    setSelectedTopic(null);
     localStorage.removeItem(LAST_SESSION_KEY);
   }
 
@@ -224,7 +231,13 @@ export default function ChatPage() {
       {/* 좌측 주제 트리 (접기 가능, 모바일에선 숨김) */}
       {sidebarOpen && (
         <aside className="slim-scroll hidden w-72 shrink-0 overflow-y-auto border-r border-neutral-200 md:block dark:border-neutral-800">
-          <TaxonomyTree onPick={(topic) => setInput(topic)} />
+          <TaxonomyTree
+            selected={selectedTopic}
+            onPick={(topic) => {
+              setInput(topic);
+              setSelectedTopic(topic);
+            }}
+          />
         </aside>
       )}
 

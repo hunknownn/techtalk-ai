@@ -24,11 +24,33 @@ const short = (name: string) => name.split("(")[0].trim();
  */
 export function TaxonomyTree({
   onPick,
+  selected,
 }: {
   onPick: (topic: string) => void;
+  /** 현재 선택된 주제 — 해당 소주제까지 자동 펼침·하이라이트·스크롤 */
+  selected?: string | null;
 }) {
   const [tree, setTree] = useState<Top[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!selected || tree.length === 0) return;
+    for (const top of tree) {
+      for (const mid of top.mids) {
+        if (mid.leaves.some((l) => l.name === selected)) {
+          setOpen(
+            (prev) => new Set([...prev, top.name, `${top.name}/${mid.name}`])
+          );
+          setTimeout(() => {
+            document
+              .getElementById(`leaf-${selected}`)
+              ?.scrollIntoView({ block: "center", behavior: "smooth" });
+          }, 120);
+          return;
+        }
+      }
+    }
+  }, [selected, tree]);
 
   useEffect(() => {
     fetch("/api/taxonomy")
@@ -94,9 +116,14 @@ export function TaxonomyTree({
                         {mid.leaves.map((leaf) => (
                           <li key={leaf.name}>
                             <button
+                              id={`leaf-${leaf.name}`}
                               onClick={() => onPick(leaf.name)}
                               title="클릭하면 입력창에 주제가 들어갑니다"
-                              className="flex w-full items-start gap-1.5 rounded px-2 py-0.5 text-left text-xs text-neutral-600 hover:bg-blue-500/10 hover:text-blue-500 dark:text-neutral-400"
+                              className={`flex w-full items-start gap-1.5 rounded px-2 py-0.5 text-left text-xs hover:bg-blue-500/10 hover:text-blue-500 ${
+                                selected === leaf.name
+                                  ? "bg-blue-500/15 font-medium text-blue-500"
+                                  : "text-neutral-600 dark:text-neutral-400"
+                              }`}
                             >
                               <span className="mt-0.5 shrink-0">
                                 {leaf.covered ? "✅" : "·"}
