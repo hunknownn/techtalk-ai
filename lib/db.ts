@@ -63,6 +63,7 @@ function createDb() {
     "ALTER TABLE sessions ADD COLUMN context_tokens INTEGER",
     "ALTER TABLE sessions ADD COLUMN user_id INTEGER",
     "ALTER TABLE artifacts ADD COLUMN user_id INTEGER",
+    "ALTER TABLE users ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0",
   ]) {
     try {
       db.exec(ddl);

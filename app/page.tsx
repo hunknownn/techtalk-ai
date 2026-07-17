@@ -107,6 +107,11 @@ export default function ChatPage() {
         return;
       }
       const d = await r.json();
+      // 구독 연결됐는데 온보딩 미완료면 주제 설정으로
+      if (d.subscriptionBound && !d.onboarded) {
+        window.location.href = "/onboarding";
+        return;
+      }
       setMe({
         username: d.user.username,
         subscriptionBound: d.subscriptionBound,
