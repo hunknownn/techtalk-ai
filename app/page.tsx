@@ -268,85 +268,105 @@ export default function ChatPage() {
       )}
 
       <main className="mx-auto flex h-dvh w-full max-w-5xl flex-1 flex-col p-4">
-        <header className="mb-3 flex items-center justify-between">
+        <header className="mb-3 flex items-center gap-2 border-b border-neutral-200 pb-2 dark:border-neutral-800">
+          {/* 좌상단: 사이드바 토글 + 타이틀(홈 버튼) */}
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            className="mr-3 hidden text-neutral-500 hover:text-neutral-300 md:block"
+            className="hidden text-neutral-500 hover:text-neutral-300 md:block"
             title={sidebarOpen ? "주제 패널 닫기" : "주제 패널 열기"}
           >
             ☰
           </button>
-          <h1 className="text-xl font-bold">techtalk</h1>
-          <div className="mx-3 flex-1">
-            <UsageHud refreshKey={hudKey} contextTokens={contextTokens} />
-          </div>
-          <select
-            value={model}
-            disabled={busy}
-            onChange={(e) => setModel(e.target.value)}
-            title="사용 모델 (대화 중에도 변경 가능)"
-            className="mr-2 rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+          <button
+            onClick={() => {
+              window.location.href = "/";
+            }}
+            className="text-xl font-bold tracking-tight hover:opacity-80"
+            title="홈 (새 대화)"
           >
-            {MODELS.map((m) => (
-              <option key={m.key} value={m.key}>
-                {m.label}
-              </option>
+            techtalk
+          </button>
+
+          {/* 페이지 탭 */}
+          <nav className="ml-2 flex items-center gap-1 text-sm">
+            {[
+              { href: "/dashboard", label: "대시보드" },
+              { href: "/artifacts", label: "산출물" },
+              { href: "/auth", label: "인증" },
+            ].map((t) => (
+              <a
+                key={t.href}
+                href={t.href}
+                className="rounded px-2.5 py-1 text-neutral-600 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-800"
+              >
+                {t.label}
+              </a>
             ))}
-          </select>
-        <nav className="flex items-center gap-3 text-sm">
-          {sessions.length > 0 && (
+          </nav>
+
+          {/* 우측: 사용량 HUD + 모델·세션 컨트롤 + 액션 */}
+          <div className="ml-auto flex items-center gap-2">
+            <UsageHud refreshKey={hudKey} contextTokens={contextTokens} />
             <select
-              value={sessionId ?? ""}
+              value={model}
               disabled={busy}
-              onChange={(e) => {
-                if (e.target.value) loadSession(Number(e.target.value));
-              }}
-              className="max-w-40 rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+              onChange={(e) => setModel(e.target.value)}
+              title="사용 모델 (대화 중에도 변경 가능)"
+              className="rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
             >
-              <option value="">이전 세션…</option>
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  [{s.mode}] {(s.topic ?? `#${s.id}`).slice(0, 30)}
+              {MODELS.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
                 </option>
               ))}
             </select>
-          )}
-          <a href="/dashboard" className="text-blue-500 hover:underline">
-            대시보드
-          </a>
-          <a href="/artifacts" className="text-blue-500 hover:underline">
-            산출물
-          </a>
-          <a href="/auth" className="text-neutral-500 hover:underline">
-            인증
-          </a>
-          <button onClick={reset} className="text-neutral-500 hover:underline">
-            새 대화
-          </button>
-          {sessionId !== null && (
+            {sessions.length > 0 && (
+              <select
+                value={sessionId ?? ""}
+                disabled={busy}
+                onChange={(e) => {
+                  if (e.target.value) loadSession(Number(e.target.value));
+                }}
+                className="max-w-40 rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+              >
+                <option value="">이전 세션…</option>
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    [{s.mode}] {(s.topic ?? `#${s.id}`).slice(0, 30)}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
-              onClick={deleteCurrentSession}
-              disabled={busy}
-              className="text-red-400 hover:underline disabled:opacity-40"
-              title="현재 세션을 목록에서 삭제"
+              onClick={reset}
+              className="rounded border border-neutral-300 px-2.5 py-1 text-sm text-neutral-600 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
             >
-              삭제
+              새 대화
             </button>
-          )}
-          {me && (
-            <button
-              onClick={async () => {
-                await fetch("/api/logout", { method: "POST" });
-                window.location.href = "/login";
-              }}
-              className="text-neutral-400 hover:underline"
-              title={`${me.username} 로그아웃`}
-            >
-              로그아웃
-            </button>
-          )}
-        </nav>
-      </header>
+            {sessionId !== null && (
+              <button
+                onClick={deleteCurrentSession}
+                disabled={busy}
+                className="text-sm text-red-400 hover:underline disabled:opacity-40"
+                title="현재 세션을 목록에서 삭제"
+              >
+                삭제
+              </button>
+            )}
+            {me && (
+              <button
+                onClick={async () => {
+                  await fetch("/api/logout", { method: "POST" });
+                  window.location.href = "/login";
+                }}
+                className="text-sm text-neutral-400 hover:underline"
+                title={`${me.username} 로그아웃`}
+              >
+                로그아웃
+              </button>
+            )}
+          </div>
+        </header>
 
       {/* 모드 선택: 세션 시작 전에만 변경 가능 (스킬의 '방식 먼저 확정' 규약) */}
       <div className="mb-3 grid grid-cols-3 gap-2">
