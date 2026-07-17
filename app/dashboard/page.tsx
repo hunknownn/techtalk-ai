@@ -61,15 +61,7 @@ export default async function DashboardPage() {
     <main className="mx-auto max-w-4xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">학습 대시보드</h1>
-        <nav className="flex items-center gap-3 text-sm">
-          <RescanButton />
-          <Link href="/artifacts" className="text-blue-500 hover:underline">
-            산출물
-          </Link>
-          <Link href="/" className="text-blue-500 hover:underline">
-            채팅
-          </Link>
-        </nav>
+        <RescanButton />
       </div>
 
       {/* 전체 커버리지 */}

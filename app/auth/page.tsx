@@ -56,12 +56,7 @@ export default function AuthPage() {
 
   return (
     <main className="mx-auto max-w-2xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">구독 연결</h1>
-        <a href="/" className="text-sm text-blue-500 hover:underline">
-          ← 채팅으로
-        </a>
-      </div>
+      <h1 className="mb-6 text-2xl font-bold">구독 연결</h1>
 
       {status && (
         <>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AppHeader } from "./app-header";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,7 +28,11 @@ export default function RootLayout({
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex h-dvh flex-col">
+        <AppHeader />
+        {/* 채팅은 내부에서 h-full로 꽉 채우고, 나머지 페이지는 이 래퍼가 스크롤 */}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      </body>
     </html>
   );
 }

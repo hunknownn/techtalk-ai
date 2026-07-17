@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/webauth";
@@ -24,12 +23,7 @@ export default async function ArtifactsPage() {
 
   return (
     <main className="mx-auto max-w-3xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">산출물</h1>
-        <Link href="/" className="text-sm text-blue-500 hover:underline">
-          ← 채팅으로
-        </Link>
-      </div>
+      <h1 className="mb-6 text-2xl font-bold">산출물</h1>
       {rows.length === 0 ? (
         <p className="text-neutral-500">
           아직 산출물이 없습니다. 채팅에서 바로산출물 모드로 만들어보세요.

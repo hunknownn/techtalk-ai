@@ -31,7 +31,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex h-dvh items-center justify-center p-4">
+    <main className="flex h-full items-center justify-center p-4">
       <form
         onSubmit={submit}
         className="w-full max-w-sm space-y-4 rounded-xl border border-neutral-200 p-6 dark:border-neutral-800"
