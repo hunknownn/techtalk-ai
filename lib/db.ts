@@ -14,6 +14,8 @@ function createDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const db = new Database(path.join(DATA_DIR, "techtalk.db"));
   db.pragma("journal_mode = WAL");
+  // 동시 오픈(빌드 시 다중 워커, 런타임 경합) 시 즉시 실패 대신 대기
+  db.pragma("busy_timeout = 5000");
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +76,19 @@ function createDb() {
   return db;
 }
 
-// Next.js 개발모드 핫리로드 시 커넥션 중복 생성 방지
+// Lazy 초기화: 모듈 import만으로 DB를 열지 않는다.
+// (빌드 시 다중 워커가 모듈을 import하며 새 DB에 동시 마이그레이션 → 락 경합 방지.
+//  런타임은 globalThis 싱글턴으로 핫리로드에도 커넥션 1개 유지)
 const g = globalThis as unknown as { __techtalkDb?: Database.Database };
-export const db = g.__techtalkDb ?? (g.__techtalkDb = createDb());
+function getDb(): Database.Database {
+  return g.__techtalkDb ?? (g.__techtalkDb = createDb());
+}
+
+// 첫 프로퍼티 접근(실제 쿼리) 시점에만 커넥션을 연다
+export const db = new Proxy({} as Database.Database, {
+  get(_t, prop) {
+    const real = getDb() as unknown as Record<string | symbol, unknown>;
+    const v = real[prop];
+    return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(real) : v;
+  },
+});

@@ -32,30 +32,20 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 /**
- * 사용자 생성. 최초 사용자는 소유자로 간주해
- * 기존(단일 사용자 시절) 데이터를 전부 이관받는다.
+ * 사용자 생성. 모든 사용자는 격리된 홈을 갖는다.
+ * 레거시(단일 사용자 시절) 데이터 이관은 자동으로 하지 않는다 —
+ * 관리자가 대상 계정을 지정해 /api/admin/migrate-legacy 로 명시 실행.
  */
 export function createUser(username: string, password: string): WebUser {
-  const isFirst =
-    (db.prepare("SELECT COUNT(*) AS c FROM users").get() as { c: number }).c ===
-    0;
-  const homeDir = isFirst
-    ? (process.env.HOME ?? "/home/app")
-    : `${process.env.HOME ?? "/home/app"}/users/${username}`;
+  const base = process.env.HOME ?? "/home/app";
+  const homeDir = `${base}/users/${username}`;
 
   const info = db
     .prepare(
       "INSERT INTO users (username, password_hash, home_dir) VALUES (?, ?, ?)"
     )
     .run(username, hashPassword(password), homeDir);
-  const id = Number(info.lastInsertRowid);
-
-  if (isFirst) {
-    // 레거시 데이터(소유자 시절 세션·산출물) 이관
-    db.prepare("UPDATE sessions SET user_id = ? WHERE user_id IS NULL").run(id);
-    db.prepare("UPDATE artifacts SET user_id = ? WHERE user_id IS NULL").run(id);
-  }
-  return { id, username, home_dir: homeDir };
+  return { id: Number(info.lastInsertRowid), username, home_dir: homeDir };
 }
 
 export function loginUser(username: string, password: string): string | null {
