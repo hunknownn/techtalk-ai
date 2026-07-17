@@ -82,12 +82,15 @@ const iv = setInterval(() => {
   if (!codeSent && urlWritten && fs.existsSync(codeFile)) {
     const code = fs.readFileSync(codeFile, "utf8").trim();
     if (code) {
-      p.write(code + "\r");
       codeSent = true;
       setPhase("exchanging");
       try {
         fs.unlinkSync(codeFile);
       } catch {}
+      // Ink 입력 TUI: 코드 붙여넣기와 Enter를 한 번에 보내면 Enter가
+      // 붙여넣기 텍스트로 흡수돼 제출이 안 됨 → 분리해서 전송
+      p.write(code);
+      setTimeout(() => p.write("\r"), 600);
     }
   }
 }, 1000);
