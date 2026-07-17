@@ -30,10 +30,10 @@ export default function AuthPage() {
     refresh();
   }, [refresh]);
 
-  // 연결 진행 중엔 상태 폴링
+  // 연결 진행 중엔 상태 폴링 (URL 대기·교환까지 계속)
   useEffect(() => {
     const phase = status?.reauth.phase;
-    if (phase === "starting" || phase === "exchanging") {
+    if (phase === "starting" || phase === "waiting_code" || phase === "exchanging") {
       const t = setTimeout(refresh, 1500);
       return () => clearTimeout(t);
     }

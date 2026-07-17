@@ -37,6 +37,9 @@ COPY --from=builder /app/public ./public
 # 누락하므로 빌더에서 컴파일된 완전본으로 덮어쓴다
 COPY --from=builder /app/node_modules/node-pty ./node_modules/node-pty
 
+# 구독 재인증 드라이버 (detached 실행)
+COPY reauth-driver.cjs ./reauth-driver.cjs
+
 # 스킬 원본은 이미지에 보관, 기동 시 $HOME으로 동기화 (PVC가 홈을 덮는 문제 회피)
 COPY skills /opt/skills
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

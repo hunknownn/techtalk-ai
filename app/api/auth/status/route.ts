@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { getCurrentUser } from "@/lib/webauth";
 import { ensureUserRuntime } from "@/lib/userenv";
-import { getReauthSession } from "@/lib/reauth";
+import { readReauthState } from "@/lib/reauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +26,6 @@ export async function GET() {
   return Response.json({
     username: user.username,
     token,
-    reauth: getReauthSession(user.id, rt.tokenFile).state,
+    reauth: readReauthState(user.id),
   });
 }
