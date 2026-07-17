@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ChatSidebar, type SessionSummary } from "./chat-sidebar";
 import { Markdown } from "./markdown";
-import { TaxonomyTree } from "./taxonomy-tree";
 import { UsageHud } from "./usage-hud";
 
 const MODELS = [
@@ -30,12 +30,6 @@ interface RelatedArtifact extends ArtifactLink {
   taxonomy_path?: string | null;
 }
 
-interface SessionSummary {
-  id: number;
-  topic: string | null;
-  mode: Mode;
-  created_at: string;
-}
 
 const LAST_SESSION_KEY = "techtalk-last-session";
 
@@ -157,11 +151,10 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function deleteCurrentSession() {
-    if (sessionId === null) return;
+  async function deleteSession(id: number) {
     if (!confirm("이 세션을 목록에서 삭제할까요? (산출물은 유지됩니다)")) return;
-    await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
-    reset();
+    await fetch(`/api/sessions/${id}`, { method: "DELETE" });
+    if (id === sessionId) reset();
     refreshSessions();
   }
 
@@ -288,20 +281,53 @@ export default function ChatPage() {
     localStorage.removeItem(LAST_SESSION_KEY);
   }
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // 사이드바 열림 상태: null = 기본값 (데스크톱 열림, 모바일 닫힘)
+  const [sidebarOpen, setSidebarOpen] = useState<boolean | null>(null);
+  const desktopSidebarOpen = sidebarOpen ?? true;
+  const mobileSidebarOpen = sidebarOpen ?? false;
+
+  const isDesktop = () =>
+    typeof window !== "undefined" &&
+    window.matchMedia("(min-width: 768px)").matches;
+
+  const toggleSidebar = () =>
+    setSidebarOpen(!(isDesktop() ? desktopSidebarOpen : mobileSidebarOpen));
+
+  // 모바일 드로어에서 항목을 고르면 드로어를 닫는다
+  const closeSidebarOnMobile = () => {
+    if (!isDesktop()) setSidebarOpen(false);
+  };
+
+  const sidebar = (
+    <ChatSidebar
+      selectedTopic={selectedTopic}
+      onPickTopic={(topic) => {
+        setInput(topic);
+        setSelectedTopic(topic);
+        closeSidebarOnMobile();
+      }}
+      sessions={sessions}
+      currentSessionId={sessionId}
+      onSelectSession={(id) => {
+        loadSession(id);
+        closeSidebarOnMobile();
+      }}
+      onDeleteSession={deleteSession}
+    />
+  );
 
   return (
     <div className="flex h-full flex-col">
       {/* 채팅 툴바: 채팅 전용 컨트롤 (전역 네비는 layout의 AppHeader) */}
       <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-1.5 dark:border-neutral-800">
         <button
-          onClick={() => setSidebarOpen((v) => !v)}
-          className="hidden rounded p-1 text-lg leading-none text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800 md:block dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-          title={sidebarOpen ? "주제 패널 닫기" : "주제 패널 열기"}
-          aria-label="주제 패널 토글"
-          aria-expanded={sidebarOpen}
+          onClick={toggleSidebar}
+          className="rounded p-1 text-lg leading-none text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+          title={desktopSidebarOpen ? "주제·세션 패널 닫기" : "주제·세션 패널 열기"}
+          aria-label="주제·세션 패널 토글"
+          aria-expanded={desktopSidebarOpen}
         >
-          {sidebarOpen ? "«" : "☰"}
+          {desktopSidebarOpen ? "«" : "☰"}
         </button>
         <div className="ml-auto flex items-center gap-2">
           <UsageHud refreshKey={hudKey} contextTokens={contextTokens} />
@@ -318,23 +344,6 @@ export default function ChatPage() {
               </option>
             ))}
           </select>
-          {sessions.length > 0 && (
-            <select
-              value={sessionId ?? ""}
-              disabled={busy}
-              onChange={(e) => {
-                if (e.target.value) loadSession(Number(e.target.value));
-              }}
-              className="max-w-40 rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
-            >
-              <option value="">이전 세션…</option>
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  [{s.mode}] {(s.topic ?? `#${s.id}`).slice(0, 30)}
-                </option>
-              ))}
-            </select>
-          )}
           <button
             onClick={reset}
             className="rounded border border-neutral-300 px-2.5 py-1 text-sm text-neutral-600 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
@@ -343,7 +352,7 @@ export default function ChatPage() {
           </button>
           {sessionId !== null && (
             <button
-              onClick={deleteCurrentSession}
+              onClick={() => deleteSession(sessionId)}
               disabled={busy}
               className="text-sm text-red-400 hover:underline disabled:opacity-40"
               title="현재 세션을 목록에서 삭제"
@@ -356,16 +365,24 @@ export default function ChatPage() {
 
       {/* 본문: 좌측 주제 패널 + 채팅 영역 */}
       <div className="flex flex-1 overflow-hidden">
-        {sidebarOpen && (
-          <aside className="slim-scroll hidden w-72 shrink-0 overflow-y-auto border-r border-neutral-200 md:block dark:border-neutral-800">
-            <TaxonomyTree
-              selected={selectedTopic}
-              onPick={(topic) => {
-                setInput(topic);
-                setSelectedTopic(topic);
-              }}
-            />
+        {/* 데스크톱: 인라인 사이드바 */}
+        {desktopSidebarOpen && (
+          <aside className="hidden w-72 shrink-0 border-r border-neutral-200 md:block dark:border-neutral-800">
+            {sidebar}
           </aside>
+        )}
+        {/* 모바일: 오버레이 드로어 */}
+        {mobileSidebarOpen && (
+          <div className="md:hidden">
+            <div
+              className="fixed inset-0 z-30 bg-black/40"
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden
+            />
+            <aside className="fixed inset-y-0 left-0 z-40 w-72 border-r border-neutral-200 bg-background dark:border-neutral-800">
+              {sidebar}
+            </aside>
+          </div>
         )}
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col overflow-hidden p-4">
@@ -512,7 +529,7 @@ export default function ChatPage() {
 
       {/* 우측 산출물 패널: 이 세션 산출물 + 같은 주제의 과거 산출물 */}
       {(artifacts.length > 0 || related.length > 0) && (
-        <aside className="slim-scroll hidden w-64 shrink-0 overflow-y-auto border-l border-neutral-200 p-3 xl:block dark:border-neutral-800">
+        <aside className="slim-scroll hidden w-64 shrink-0 overflow-y-auto border-l border-neutral-200 p-3 lg:block dark:border-neutral-800">
           <h2 className="mb-2 text-sm font-semibold">산출물</h2>
           {artifacts.length > 0 && (
             <div className="mb-4">
