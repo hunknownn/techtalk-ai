@@ -164,7 +164,7 @@ export default function ChatPage() {
     <div className="flex h-dvh">
       {/* 좌측 주제 트리 (접기 가능, 모바일에선 숨김) */}
       {sidebarOpen && (
-        <aside className="hidden w-72 shrink-0 overflow-y-auto border-r border-neutral-200 md:block dark:border-neutral-800">
+        <aside className="slim-scroll hidden w-72 shrink-0 overflow-y-auto border-r border-neutral-200 md:block dark:border-neutral-800">
           <TaxonomyTree onPick={(topic) => setInput(topic)} />
         </aside>
       )}
@@ -231,7 +231,7 @@ export default function ChatPage() {
         ))}
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+      <div className="slim-scroll flex-1 space-y-4 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         {messages.length === 0 && (
           <p className="text-sm text-neutral-500">
             주제를 입력하면 선택한 방식으로 시작합니다. (예: &quot;B+Tree
