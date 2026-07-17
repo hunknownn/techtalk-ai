@@ -23,10 +23,11 @@ interface SessionRow {
 }
 
 export async function POST(req: NextRequest) {
-  const { sessionId, mode, message } = (await req.json()) as {
+  const { sessionId, mode, message, model } = (await req.json()) as {
     sessionId?: number;
     mode?: string;
     message: string;
+    model?: string;
   };
 
   if (!message?.trim()) {
@@ -56,8 +57,8 @@ export async function POST(req: NextRequest) {
       );
     }
     const info = db
-      .prepare("INSERT INTO sessions (topic, mode) VALUES (?, ?)")
-      .run(message.slice(0, 200), mode);
+      .prepare("INSERT INTO sessions (topic, mode, model) VALUES (?, ?, ?)")
+      .run(message.slice(0, 200), mode, model ?? null);
     session = { id: Number(info.lastInsertRowid), mode: mode!, sdk_session_id: null };
     prompt = `techtalk ${flag} ${message}`;
   }
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
 
       let assistantText = "";
       let sdkSessionId = session.sdk_session_id;
+      let contextTokens: number | null = null;
 
       // 웹 재인증으로 발급한 장기 토큰이 있으면 기본 인증보다 우선 사용
       const longLivedToken = readLongLivedToken();
@@ -105,6 +107,8 @@ export async function POST(req: NextRequest) {
                   },
                 }
               : {}),
+            // 모델 선택 (미지정이면 Claude Code 기본값)
+            ...(model && model !== "default" ? { model } : {}),
           },
         });
 
@@ -126,13 +130,22 @@ export async function POST(req: NextRequest) {
                 send({ type: "tool", name: block.name });
               }
             }
+          } else if (msg.type === "result") {
+            // 현재 세션의 컨텍스트 크기 ≈ 마지막 턴 입력 토큰(캐시 포함)
+            const u = (msg as unknown as { usage?: Record<string, number> })
+              .usage;
+            if (u) {
+              contextTokens =
+                (u.input_tokens ?? 0) +
+                (u.cache_read_input_tokens ?? 0) +
+                (u.cache_creation_input_tokens ?? 0);
+            }
           }
         }
 
-        db.prepare("UPDATE sessions SET sdk_session_id = ? WHERE id = ?").run(
-          sdkSessionId,
-          session.id
-        );
+        db.prepare(
+          "UPDATE sessions SET sdk_session_id = ?, context_tokens = COALESCE(?, context_tokens), model = COALESCE(?, model) WHERE id = ?"
+        ).run(sdkSessionId, contextTokens, model ?? null, session.id);
         if (assistantText) {
           db.prepare(
             "INSERT INTO messages (session_id, role, content) VALUES (?, 'assistant', ?)"
@@ -140,7 +153,7 @@ export async function POST(req: NextRequest) {
         }
 
         const artifacts = ingestNewArtifacts(session.id, startMs);
-        send({ type: "done", sessionId: session.id, artifacts });
+        send({ type: "done", sessionId: session.id, artifacts, contextTokens });
       } catch (e) {
         send({
           type: "error",

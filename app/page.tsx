@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { TaxonomyTree } from "./taxonomy-tree";
+import { UsageHud } from "./usage-hud";
+
+const MODELS = [
+  { key: "default", label: "기본 모델" },
+  { key: "sonnet", label: "Sonnet" },
+  { key: "opus", label: "Opus" },
+  { key: "haiku", label: "Haiku" },
+];
 
 type Mode = "produce" | "socratic" | "drill";
 
@@ -40,6 +48,9 @@ export default function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [model, setModel] = useState("default");
+  const [contextTokens, setContextTokens] = useState<number | null>(null);
+  const [hudKey, setHudKey] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // 세션 복원: DB에 저장된 이력을 불러와 이어간다 (SDK resume으로 맥락 유지)
@@ -54,6 +65,8 @@ export default function ChatPage() {
     setMode(data.session.mode);
     setMessages(data.messages);
     setArtifacts(data.artifacts);
+    setModel(data.session.model ?? "default");
+    setContextTokens(data.session.context_tokens ?? null);
     localStorage.setItem(LAST_SESSION_KEY, String(data.session.id));
     scrollToBottom();
   }
@@ -100,7 +113,7 @@ export default function ChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, mode, message }),
+        body: JSON.stringify({ sessionId, mode, message, model }),
       });
       if (!res.ok || !res.body) {
         throw new Error(`요청 실패 (${res.status})`);
@@ -140,6 +153,10 @@ export default function ChatPage() {
             if (ev.artifacts?.length) {
               setArtifacts((prev) => [...prev, ...ev.artifacts]);
             }
+            if (typeof ev.contextTokens === "number") {
+              setContextTokens(ev.contextTokens);
+            }
+            setHudKey((k) => k + 1);
           } else if (ev.type === "error") {
             throw new Error(ev.message);
           }
@@ -166,6 +183,7 @@ export default function ChatPage() {
     setMessages([]);
     setArtifacts([]);
     setToolStatus(null);
+    setContextTokens(null);
     localStorage.removeItem(LAST_SESSION_KEY);
   }
 
@@ -189,7 +207,23 @@ export default function ChatPage() {
           >
             ☰
           </button>
-          <h1 className="flex-1 text-xl font-bold">techtalk</h1>
+          <h1 className="text-xl font-bold">techtalk</h1>
+          <div className="mx-3 flex-1">
+            <UsageHud refreshKey={hudKey} contextTokens={contextTokens} />
+          </div>
+          <select
+            value={model}
+            disabled={busy}
+            onChange={(e) => setModel(e.target.value)}
+            title="사용 모델 (대화 중에도 변경 가능)"
+            className="mr-2 rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            {MODELS.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label}
+              </option>
+            ))}
+          </select>
         <nav className="flex items-center gap-3 text-sm">
           {sessions.length > 0 && (
             <select

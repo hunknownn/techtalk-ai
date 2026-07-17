@@ -41,13 +41,17 @@ function createDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
-  // 마이그레이션: 세션 소프트 삭제 컬럼 (기존 DB에 없으면 추가)
-  try {
-    db.exec(
-      "ALTER TABLE sessions ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0"
-    );
-  } catch {
-    /* 이미 존재 */
+  // 마이그레이션: 기존 DB에 없는 컬럼 추가 (이미 있으면 무시)
+  for (const ddl of [
+    "ALTER TABLE sessions ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE sessions ADD COLUMN model TEXT",
+    "ALTER TABLE sessions ADD COLUMN context_tokens INTEGER",
+  ]) {
+    try {
+      db.exec(ddl);
+    } catch {
+      /* 이미 존재 */
+    }
   }
   return db;
 }

@@ -11,7 +11,7 @@ export async function GET(
   const { id } = await params;
   const session = db
     .prepare(
-      "SELECT id, topic, mode, created_at FROM sessions WHERE id = ? AND deleted = 0"
+      "SELECT id, topic, mode, model, context_tokens, created_at FROM sessions WHERE id = ? AND deleted = 0"
     )
     .get(Number(id));
   if (!session) return Response.json({ error: "not found" }, { status: 404 });
