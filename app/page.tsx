@@ -253,29 +253,17 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="flex h-dvh">
-      {/* 좌측 주제 트리 (접기 가능, 모바일에선 숨김) */}
-      {sidebarOpen && (
-        <aside className="slim-scroll hidden w-72 shrink-0 overflow-y-auto border-r border-neutral-200 md:block dark:border-neutral-800">
-          <TaxonomyTree
-            selected={selectedTopic}
-            onPick={(topic) => {
-              setInput(topic);
-              setSelectedTopic(topic);
-            }}
-          />
-        </aside>
-      )}
-
-      <main className="mx-auto flex h-dvh w-full max-w-5xl flex-1 flex-col p-4">
-        <header className="mb-3 flex items-center gap-2 border-b border-neutral-200 pb-2 dark:border-neutral-800">
-          {/* 좌상단: 사이드바 토글 + 타이틀(홈 버튼) */}
+    <div className="flex h-dvh flex-col">
+      {/* 전역 상단 바 (전체 폭 · 최상위 네비게이션) */}
+      <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+          {/* 사이드바 토글 + 타이틀(홈 버튼) */}
           <button
             onClick={() => setSidebarOpen((v) => !v)}
-            className="hidden text-neutral-500 hover:text-neutral-300 md:block"
+            className="hidden rounded p-1 text-lg leading-none text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800 md:block dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
             title={sidebarOpen ? "주제 패널 닫기" : "주제 패널 열기"}
+            aria-label="주제 패널 토글"
           >
-            ☰
+            {sidebarOpen ? "«" : "☰"}
           </button>
           <button
             onClick={() => {
@@ -366,7 +354,23 @@ export default function ChatPage() {
               </button>
             )}
           </div>
-        </header>
+      </header>
+
+      {/* 본문: 좌측 주제 패널 + 채팅 영역 */}
+      <div className="flex flex-1 overflow-hidden">
+        {sidebarOpen && (
+          <aside className="slim-scroll hidden w-72 shrink-0 overflow-y-auto border-r border-neutral-200 md:block dark:border-neutral-800">
+            <TaxonomyTree
+              selected={selectedTopic}
+              onPick={(topic) => {
+                setInput(topic);
+                setSelectedTopic(topic);
+              }}
+            />
+          </aside>
+        )}
+
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col overflow-hidden p-4">
 
       {/* 모드 선택: 세션 시작 전에만 변경 가능 (스킬의 '방식 먼저 확정' 규약) */}
       <div className="mb-3 grid grid-cols-3 gap-2">
@@ -528,6 +532,7 @@ export default function ChatPage() {
           )}
         </aside>
       )}
+      </div>
     </div>
   );
 }

@@ -22,11 +22,14 @@ spec:
       labels:
         app: techtalk-web
     spec:
+      # 롤아웃 시 옛 파드가 진행 중인 채팅 SSE 응답을 마칠 시간을 준다.
+      # (SIGTERM 후 최대 120초까지 드레인, 그 안에 끝나면 바로 종료)
+      terminationGracePeriodSeconds: 120
       securityContext:
         fsGroup: 1001
       containers:
         - name: web
-          image: nuhgnod/techtalk-web:0.5.8
+          image: nuhgnod/techtalk-web:0.5.9
           ports:
             - containerPort: 3000
           env:
