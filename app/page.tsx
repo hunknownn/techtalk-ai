@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChatSidebar, type SessionSummary } from "./chat-sidebar";
+import { ConfirmDialog } from "./confirm-dialog";
 import { Markdown } from "./markdown";
 import { UsageHud } from "./usage-hud";
 
@@ -62,6 +63,12 @@ export default function ChatPage() {
     message: string;
     failed: string;
   } | null>(null);
+  // 빈 화면에서 보여줄 추천 주제 칩 (미커버 소주제 앞에서부터)
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  // 확인 다이얼로그: 세션 삭제 / 새 대화
+  const [confirmAction, setConfirmAction] = useState<
+    { kind: "delete"; id: number } | { kind: "reset" } | null
+  >(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
   // 사용자가 위로 스크롤해 읽는 중이면 자동 스크롤을 멈춘다
@@ -129,6 +136,20 @@ export default function ChatPage() {
       });
     });
     refreshSessions();
+    // 추천 주제 칩: 주제 트리에서 아직 안 다룬 소주제 앞 4개
+    fetch("/api/taxonomy")
+      .then((r) => r.json())
+      .then((d) => {
+        const leaves = (
+          (d.tree ?? []) as {
+            mids: { leaves: { name: string; covered: boolean }[] }[];
+          }[]
+        ).flatMap((t) => t.mids.flatMap((m) => m.leaves));
+        setSuggestions(
+          leaves.filter((l) => !l.covered).slice(0, 4).map((l) => l.name)
+        );
+      })
+      .catch(() => {});
     // 대시보드 등에서 진입: ?session=<id> 세션 열기, ?topic=<주제> 입력 프리필
     const params = new URLSearchParams(window.location.search);
     const sessionParam = params.get("session");
@@ -152,7 +173,6 @@ export default function ChatPage() {
   }, []);
 
   async function deleteSession(id: number) {
-    if (!confirm("이 세션을 목록에서 삭제할까요? (산출물은 유지됩니다)")) return;
     await fetch(`/api/sessions/${id}`, { method: "DELETE" });
     if (id === sessionId) reset();
     refreshSessions();
@@ -312,7 +332,7 @@ export default function ChatPage() {
         loadSession(id);
         closeSidebarOnMobile();
       }}
-      onDeleteSession={deleteSession}
+      onDeleteSession={(id) => setConfirmAction({ kind: "delete", id })}
     />
   );
 
@@ -345,14 +365,18 @@ export default function ChatPage() {
             ))}
           </select>
           <button
-            onClick={reset}
+            onClick={() =>
+              messages.length > 0
+                ? setConfirmAction({ kind: "reset" })
+                : reset()
+            }
             className="rounded border border-neutral-300 px-2.5 py-1 text-sm text-neutral-600 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
             새 대화
           </button>
           {sessionId !== null && (
             <button
-              onClick={() => deleteSession(sessionId)}
+              onClick={() => setConfirmAction({ kind: "delete", id: sessionId })}
               disabled={busy}
               className="text-sm text-red-400 hover:underline disabled:opacity-40"
               title="현재 세션을 목록에서 삭제"
@@ -387,24 +411,39 @@ export default function ChatPage() {
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col overflow-hidden p-4">
 
-      {/* 모드 선택: 세션 시작 전에만 변경 가능 (스킬의 '방식 먼저 확정' 규약) */}
-      <div className="mb-3 grid grid-cols-3 gap-2">
-        {MODES.map((m) => (
-          <button
-            key={m.key}
-            disabled={sessionId !== null}
-            onClick={() => setMode(m.key)}
-            className={`rounded-lg border p-2 text-left text-xs transition ${
-              mode === m.key
-                ? "border-blue-500 bg-blue-500/10"
-                : "border-neutral-300 dark:border-neutral-700"
-            } ${sessionId !== null ? "opacity-50" : "hover:border-blue-400"}`}
+      {/* 모드 선택: 세션 시작 전에만 변경 가능 (스킬의 '방식 먼저 확정' 규약)
+          세션이 시작되면 카드 대신 현재 모드 배지로 축소해 채팅 공간을 확보 */}
+      {sessionId === null ? (
+        <div className="mb-3 grid grid-cols-3 gap-2">
+          {MODES.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setMode(m.key)}
+              title={m.desc}
+              className={`rounded-lg border p-2 text-left text-xs transition ${
+                mode === m.key
+                  ? "border-blue-500 bg-blue-500/10"
+                  : "border-neutral-300 hover:border-blue-400 dark:border-neutral-700"
+              }`}
+            >
+              <div className="font-semibold">{m.label}</div>
+              <div className="mt-0.5 text-neutral-500">{m.desc}</div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center gap-2 text-xs">
+          <span className="rounded-full border border-blue-500/40 bg-blue-500/10 px-2.5 py-0.5 font-medium text-blue-500">
+            {MODES.find((m) => m.key === mode)?.label ?? mode}
+          </span>
+          <span
+            className="text-neutral-500"
+            title="진행 방식의 일관성을 위해 세션 시작 시 모드가 고정됩니다"
           >
-            <div className="font-semibold">{m.label}</div>
-            <div className="mt-0.5 text-neutral-500">{m.desc}</div>
-          </button>
-        ))}
-      </div>
+            모드는 세션 시작 시 고정 — 바꾸려면 새 대화를 시작하세요
+          </span>
+        </div>
+      )}
 
       {/* 구독 미연결 게이트: 본인 토큰 없이는 대화 불가 (폴백 없음) */}
       {me && !me.subscriptionBound && (
@@ -424,10 +463,29 @@ export default function ChatPage() {
         className="slim-scroll flex-1 space-y-4 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800"
       >
         {messages.length === 0 && (
-          <p className="text-sm text-neutral-500">
-            주제를 입력하면 선택한 방식으로 시작합니다. (예: &quot;B+Tree
-            인덱스&quot;, &quot;kafka 컨슈머 그룹 리밸런싱&quot;)
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-neutral-500">
+              주제를 입력하면 선택한 방식으로 시작합니다. (예: &quot;B+Tree
+              인덱스&quot;, &quot;kafka 컨슈머 그룹 리밸런싱&quot;)
+            </p>
+            {suggestions.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setInput(s);
+                      setSelectedTopic(s);
+                    }}
+                    title="클릭하면 입력창에 주제가 들어갑니다"
+                    className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-blue-400 hover:text-blue-500 dark:border-neutral-700 dark:text-neutral-400"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {messages.map((m, i) =>
           m.role === "user" ? (
@@ -438,7 +496,10 @@ export default function ChatPage() {
               {m.content}
             </div>
           ) : (
-            <div key={i} className="text-sm leading-relaxed">
+            <div
+              key={i}
+              className="border-l-2 border-neutral-200 pl-3 text-sm leading-relaxed dark:border-neutral-800"
+            >
               {m.content ? (
                 <Markdown text={m.content} />
               ) : busy && i === messages.length - 1 ? (
@@ -585,6 +646,28 @@ export default function ChatPage() {
         </aside>
       )}
       </div>
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={
+          confirmAction?.kind === "delete"
+            ? "세션을 삭제할까요?"
+            : "새 대화를 시작할까요?"
+        }
+        description={
+          confirmAction?.kind === "delete"
+            ? "목록에서만 사라지며 생성된 산출물은 유지됩니다."
+            : "현재 대화는 화면에서 사라지지만 세션 목록에서 다시 열 수 있습니다."
+        }
+        confirmLabel={confirmAction?.kind === "delete" ? "삭제" : "새 대화"}
+        danger={confirmAction?.kind === "delete"}
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={() => {
+          if (confirmAction?.kind === "delete") deleteSession(confirmAction.id);
+          else reset();
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 }

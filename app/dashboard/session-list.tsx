@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "../confirm-dialog";
 
 interface SessionRow {
   id: number;
@@ -18,11 +20,11 @@ const MODE_LABEL: Record<string, string> = {
 /** 세션 목록: 클릭 → 채팅으로 이동해 이어가기, ✕ → 소프트 삭제 */
 export function SessionList({ sessions }: { sessions: SessionRow[] }) {
   const router = useRouter();
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null);
 
-  async function remove(e: React.MouseEvent, id: number) {
-    e.stopPropagation();
-    if (!confirm("이 세션을 목록에서 삭제할까요? (산출물은 유지됩니다)")) return;
+  async function remove(id: number) {
     await fetch(`/api/sessions/${id}`, { method: "DELETE" });
+    setPendingDelete(null);
     router.refresh();
   }
 
@@ -31,6 +33,7 @@ export function SessionList({ sessions }: { sessions: SessionRow[] }) {
   }
 
   return (
+    <>
     <ul className="space-y-1 text-sm">
       {sessions.map((s) => (
         <li
@@ -45,7 +48,10 @@ export function SessionList({ sessions }: { sessions: SessionRow[] }) {
               {MODE_LABEL[s.mode] ?? s.mode} · {s.created_at.slice(0, 10)}
             </span>
             <button
-              onClick={(e) => remove(e, s.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPendingDelete(s.id);
+              }}
               className="invisible text-xs text-red-400 hover:text-red-500 group-hover:visible"
               title="세션 삭제"
             >
@@ -55,5 +61,17 @@ export function SessionList({ sessions }: { sessions: SessionRow[] }) {
         </li>
       ))}
     </ul>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="세션을 삭제할까요?"
+        description="목록에서만 사라지며 생성된 산출물은 유지됩니다."
+        confirmLabel="삭제"
+        danger
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete !== null) remove(pendingDelete);
+        }}
+      />
+    </>
   );
 }
