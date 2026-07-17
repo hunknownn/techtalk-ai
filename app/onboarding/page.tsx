@@ -199,6 +199,8 @@ export default function OnboardingPage() {
               value={interestInput}
               onChange={(e) => setInterestInput(e.target.value)}
               onKeyDown={(e) => {
+                // 한글 IME 조합 중 Enter는 무시 (마지막 글자 중복 추가 방지)
+                if (e.nativeEvent.isComposing) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
                   addInterest();

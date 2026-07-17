@@ -455,6 +455,8 @@ export default function ChatPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
+            // 한글 IME 조합 중 Enter는 무시 (마지막 글자 중복 전송 방지)
+            if (e.nativeEvent.isComposing) return;
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
