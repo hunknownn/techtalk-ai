@@ -1,0 +1,59 @@
+# 앱 소스가 main에 푸시되면: 이미지 빌드·푸시 → deploy/ 태그 범프 커밋 → ArgoCD가 auto-sync
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+    # bot의 태그 범프 커밋(deploy/만 변경)으로 다시 트리거되는 루프 방지
+    paths-ignore:
+      - "deploy/**"
+      - "argocd/**"
+      - "**.md"
+
+# 연속 푸시 시 순서 꼬임 방지: 한 번에 하나씩, 진행 중인 배포는 취소하지 않음
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  IMAGE: nuhgnod/techtalk-web
+
+jobs:
+  build-push-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag (git short SHA)
+        id: meta
+        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Bump image tag in deploy manifest
+        run: |
+          sed -i -E "s|(image: ${IMAGE}:).*|\1${{ steps.meta.outputs.tag }}|" deploy/deployment.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/deployment.yaml
+          git commit -m "chore(deploy): techtalk-web:${{ steps.meta.outputs.tag }} 이미지로 갱신"
+          # 빌드 중 다른 커밋이 들어왔을 수 있으므로 rebase 후 푸시
+          git pull --rebase origin main
+          git push origin main
