@@ -93,6 +93,20 @@ export async function POST(req: NextRequest) {
       const send = (ev: unknown) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
 
+      // Cloudflare 100초 유휴 차단(524) 방지.
+      // 첫 토큰까지 오래 걸리거나(스킬 로딩·resume) 턴 중간 툴 실행으로
+      // 텍스트 델타가 끊기는 침묵 구간이 100초를 넘으면 연결이 잘린다.
+      // → 즉시 첫 바이트를 흘리고, 15초마다 주석 하트비트를 보낸다.
+      // (클라 파서는 'data: '로 시작 안 하는 청크를 무시하므로 안전)
+      controller.enqueue(encoder.encode(": open\n\n"));
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": ping\n\n"));
+        } catch {
+          /* 이미 닫힘 */
+        }
+      }, 15000);
+
       let assistantText = "";
       let sdkSessionId = session.sdk_session_id;
       let contextTokens: number | null = null;
@@ -175,6 +189,7 @@ export async function POST(req: NextRequest) {
           message: e instanceof Error ? e.message : String(e),
         });
       } finally {
+        clearInterval(heartbeat);
         controller.close();
       }
     },
