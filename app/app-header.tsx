@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "./theme-toggle";
 
 const TABS = [
   { href: "/dashboard", label: "대시보드" },
@@ -44,16 +45,19 @@ export function AppHeader() {
         })}
       </nav>
 
-      <button
-        onClick={async () => {
-          await fetch("/api/logout", { method: "POST" });
-          window.location.href = "/login";
-        }}
-        className="ml-auto text-sm text-neutral-400 hover:underline"
-        title="로그아웃"
-      >
-        로그아웃
-      </button>
+      <div className="ml-auto flex items-center gap-2">
+        <ThemeToggle />
+        <button
+          onClick={async () => {
+            await fetch("/api/logout", { method: "POST" });
+            window.location.href = "/login";
+          }}
+          className="text-sm text-neutral-400 hover:underline"
+          title="로그아웃"
+        >
+          로그아웃
+        </button>
+      </div>
     </header>
   );
 }
