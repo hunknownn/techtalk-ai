@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function SignupPage() {
   const [username, setUsername] = useState("");
@@ -8,6 +8,22 @@ export default function SignupPage() {
   const [invite, setInvite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [nameCheck, setNameCheck] = useState<{
+    ok: boolean;
+    reason?: string;
+  } | null>(null);
+
+  // 아이디 실시간 중복·형식 검사 (디바운스)
+  useEffect(() => {
+    if (!username) return setNameCheck(null);
+    const t = setTimeout(() => {
+      fetch(`/api/users/check?username=${encodeURIComponent(username)}`)
+        .then((r) => r.json())
+        .then(setNameCheck)
+        .catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [username]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -18,7 +34,7 @@ export default function SignupPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-code": invite,
+          "x-signup-code": invite,
         },
         body: JSON.stringify({ username, password }),
       });
@@ -50,13 +66,22 @@ export default function SignupPage() {
           가입 후 본인 Claude 구독을 연결해 사용합니다. 사용량은 각자 자기
           구독에서 소모됩니다.
         </p>
-        <input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder="아이디 (소문자/숫자 2-20자)"
-          autoComplete="username"
-          className="w-full rounded border border-neutral-300 bg-transparent p-2 text-sm dark:border-neutral-700"
-        />
+        <div>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            placeholder="아이디 (소문자/숫자 2-20자)"
+            autoComplete="username"
+            className="w-full rounded border border-neutral-300 bg-transparent p-2 text-sm dark:border-neutral-700"
+          />
+          {nameCheck && (
+            <p
+              className={`mt-1 text-xs ${nameCheck.ok ? "text-emerald-500" : "text-red-500"}`}
+            >
+              {nameCheck.ok ? "사용 가능한 아이디" : nameCheck.reason}
+            </p>
+          )}
+        </div>
         <input
           type="password"
           value={password}
@@ -75,7 +100,13 @@ export default function SignupPage() {
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button
           type="submit"
-          disabled={busy || !username || !password || !invite}
+          disabled={
+            busy ||
+            !password ||
+            !invite ||
+            !nameCheck?.ok ||
+            password.length < 8
+          }
           className="w-full rounded bg-blue-600 p-2 text-sm font-medium text-white disabled:opacity-40"
         >
           {busy ? "가입 중…" : "가입하기"}

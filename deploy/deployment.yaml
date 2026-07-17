@@ -36,6 +36,14 @@ spec:
                   name: techtalk-admin
                   key: code
                   optional: true
+            # 가입 전용 코드 (관리 코드와 분리). 수동 1회 생성:
+            # kubectl -n techtalk create secret generic techtalk-signup --from-literal=code=techtalk
+            - name: TECHTALK_SIGNUP_CODE
+              valueFrom:
+                secretKeyRef:
+                  name: techtalk-signup
+                  key: code
+                  optional: true
           volumeMounts:
             # $HOME 전체를 PVC로: .claude.json(인증)과 ~/techtalk(산출물)이 여기 삶
             - name: claude-auth
