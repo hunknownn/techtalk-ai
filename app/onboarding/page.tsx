@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Area {
   name: string;
@@ -28,6 +28,19 @@ export default function OnboardingPage() {
     total: number;
     current: string;
   } | null>(null);
+
+  // 트리 생성은 수 분 걸릴 수 있음 — 진행 중 이탈(새로고침·닫기) 시 경고.
+  // 생성 완료 후의 의도된 리다이렉트는 leavingRef로 경고를 건너뛴다.
+  const leavingRef = useRef(false);
+  useEffect(() => {
+    if (!busy) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      if (leavingRef.current) return;
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [busy]);
 
   function addInterest() {
     const v = interestInput.trim();
@@ -134,6 +147,7 @@ export default function OnboardingPage() {
             setProgress({ done: ev.done, total: ev.total, current: ev.current });
           } else if (ev.type === "done") {
             finished = true;
+            leavingRef.current = true;
             window.location.href = "/dashboard";
           } else if (ev.type === "error") {
             throw new Error(ev.message ?? "생성 실패");

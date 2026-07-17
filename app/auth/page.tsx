@@ -124,21 +124,27 @@ export default function AuthPage() {
                   {status.reauth.url}
                 </a>
                 <p>2. 받은 코드를 붙여넣고 제출:</p>
-                <div className="flex gap-2">
+                <form
+                  className="flex gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (authCode.trim()) act("code");
+                  }}
+                >
                   <input
                     value={authCode}
                     onChange={(e) => setAuthCode(e.target.value)}
                     className="flex-1 rounded border border-neutral-300 bg-transparent p-2 dark:border-neutral-700"
-                    placeholder="인증 코드"
+                    placeholder="인증 코드 (Enter로 제출)"
                   />
                   <button
-                    onClick={() => act("code")}
+                    type="submit"
                     disabled={!authCode.trim()}
                     className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-40"
                   >
                     제출
                   </button>
-                </div>
+                </form>
               </>
             ) : (
               <p className="text-neutral-500">
