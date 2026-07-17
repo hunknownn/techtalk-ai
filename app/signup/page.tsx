@@ -16,7 +16,7 @@ export default function SignupPage() {
 
   // 아이디 실시간 중복·형식 검사 (디바운스)
   useEffect(() => {
-    if (!username) return setNameCheck(null);
+    if (!username) return;
     const t = setTimeout(() => {
       fetch(`/api/users/check?username=${encodeURIComponent(username)}`)
         .then((r) => r.json())
@@ -25,6 +25,8 @@ export default function SignupPage() {
     }, 350);
     return () => clearTimeout(t);
   }, [username]);
+  // 아이디가 비면 검사 결과도 숨김 (상태 초기화 대신 파생값으로 처리)
+  const shownCheck = username ? nameCheck : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,11 +77,11 @@ export default function SignupPage() {
             autoComplete="username"
             className="w-full rounded border border-neutral-300 bg-transparent p-2 text-sm dark:border-neutral-700"
           />
-          {nameCheck && (
+          {shownCheck && (
             <p
-              className={`mt-1 text-xs ${nameCheck.ok ? "text-emerald-500" : "text-red-500"}`}
+              className={`mt-1 text-xs ${shownCheck.ok ? "text-emerald-500" : "text-red-500"}`}
             >
-              {nameCheck.ok ? "사용 가능한 아이디" : nameCheck.reason}
+              {shownCheck.ok ? "사용 가능한 아이디" : shownCheck.reason}
             </p>
           )}
         </div>
@@ -103,7 +105,7 @@ export default function SignupPage() {
             busy ||
             !password ||
             !invite ||
-            !nameCheck?.ok ||
+            !shownCheck?.ok ||
             password.length < 8
           }
           className="w-full rounded bg-blue-600 p-2 text-sm font-medium text-white disabled:opacity-40"

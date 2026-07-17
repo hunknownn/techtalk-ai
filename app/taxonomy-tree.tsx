@@ -35,21 +35,29 @@ export function TaxonomyTree({
 
   useEffect(() => {
     if (!selected || tree.length === 0) return;
-    for (const top of tree) {
-      for (const mid of top.mids) {
-        if (mid.leaves.some((l) => l.name === selected)) {
-          setOpen(
-            (prev) => new Set([...prev, top.name, `${top.name}/${mid.name}`])
-          );
-          setTimeout(() => {
-            document
-              .getElementById(`leaf-${selected}`)
-              ?.scrollIntoView({ block: "center", behavior: "smooth" });
-          }, 120);
-          return;
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    // 펼침은 다음 틱으로 미룸 (이펙트 본문 동기 setState 회피)
+    const openTimer = setTimeout(() => {
+      for (const top of tree) {
+        for (const mid of top.mids) {
+          if (mid.leaves.some((l) => l.name === selected)) {
+            setOpen(
+              (prev) => new Set([...prev, top.name, `${top.name}/${mid.name}`])
+            );
+            scrollTimer = setTimeout(() => {
+              document
+                .getElementById(`leaf-${selected}`)
+                ?.scrollIntoView({ block: "center", behavior: "smooth" });
+            }, 120);
+            return;
+          }
         }
       }
-    }
+    }, 0);
+    return () => {
+      clearTimeout(openTimer);
+      if (scrollTimer) clearTimeout(scrollTimer);
+    };
   }, [selected, tree]);
 
   useEffect(() => {

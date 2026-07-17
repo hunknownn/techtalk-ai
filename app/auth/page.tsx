@@ -27,6 +27,8 @@ export default function AuthPage() {
   }, []);
 
   useEffect(() => {
+    // 마운트 시 1회 상태 조회(fetch 후 setState) — 동기 setState 아님
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
 
