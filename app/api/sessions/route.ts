@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const sessions = db
     .prepare(
-      "SELECT id, topic, mode, created_at FROM sessions ORDER BY id DESC LIMIT 30"
+      "SELECT id, topic, mode, created_at FROM sessions WHERE deleted = 0 ORDER BY id DESC LIMIT 30"
     )
     .all();
   return Response.json({ sessions });

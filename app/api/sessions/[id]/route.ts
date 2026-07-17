@@ -10,7 +10,9 @@ export async function GET(
 ) {
   const { id } = await params;
   const session = db
-    .prepare("SELECT id, topic, mode, created_at FROM sessions WHERE id = ?")
+    .prepare(
+      "SELECT id, topic, mode, created_at FROM sessions WHERE id = ? AND deleted = 0"
+    )
     .get(Number(id));
   if (!session) return Response.json({ error: "not found" }, { status: 404 });
 
@@ -26,4 +28,19 @@ export async function GET(
     .all(Number(id));
 
   return Response.json({ session, messages, artifacts });
+}
+
+// 세션 숨김(소프트 삭제): 목록·복원에서 제외되지만 DB와 산출물은 보존
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const result = db
+    .prepare("UPDATE sessions SET deleted = 1 WHERE id = ?")
+    .run(Number(id));
+  if (result.changes === 0) {
+    return Response.json({ error: "not found" }, { status: 404 });
+  }
+  return Response.json({ ok: true });
 }

@@ -41,6 +41,14 @@ function createDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // 마이그레이션: 세션 소프트 삭제 컬럼 (기존 DB에 없으면 추가)
+  try {
+    db.exec(
+      "ALTER TABLE sessions ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0"
+    );
+  } catch {
+    /* 이미 존재 */
+  }
   return db;
 }
 

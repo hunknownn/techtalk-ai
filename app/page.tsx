@@ -58,14 +58,25 @@ export default function ChatPage() {
     scrollToBottom();
   }
 
-  useEffect(() => {
+  const refreshSessions = () =>
     fetch("/api/sessions")
       .then((r) => r.json())
       .then((d) => setSessions(d.sessions ?? []));
+
+  useEffect(() => {
+    refreshSessions();
     const last = localStorage.getItem(LAST_SESSION_KEY);
     if (last) loadSession(Number(last));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function deleteCurrentSession() {
+    if (sessionId === null) return;
+    if (!confirm("이 세션을 목록에서 삭제할까요? (산출물은 유지됩니다)")) return;
+    await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+    reset();
+    refreshSessions();
+  }
 
   const scrollToBottom = () =>
     requestAnimationFrame(() =>
@@ -209,6 +220,16 @@ export default function ChatPage() {
           <button onClick={reset} className="text-neutral-500 hover:underline">
             새 대화
           </button>
+          {sessionId !== null && (
+            <button
+              onClick={deleteCurrentSession}
+              disabled={busy}
+              className="text-red-400 hover:underline disabled:opacity-40"
+              title="현재 세션을 목록에서 삭제"
+            >
+              삭제
+            </button>
+          )}
         </nav>
       </header>
 
