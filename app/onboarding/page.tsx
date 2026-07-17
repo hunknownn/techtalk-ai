@@ -23,6 +23,11 @@ export default function OnboardingPage() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+    current: string;
+  } | null>(null);
 
   function addInterest() {
     const v = interestInput.trim();
@@ -87,6 +92,7 @@ export default function OnboardingPage() {
     }
     setBusy(true);
     setError(null);
+    setProgress({ done: 0, total: selected.length, current: selected[0]?.name ?? "" });
     try {
       const res = await fetch("/api/onboarding/generate", {
         method: "POST",
@@ -95,12 +101,49 @@ export default function OnboardingPage() {
           areas: selected.map((a) => ({ name: a.name, levels: a.levels })),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "생성 실패");
-      window.location.href = "/dashboard";
+      // 초기 검증 실패 등은 JSON 에러로 옴 (SSE 스트림이 아님)
+      if (!res.ok || !res.body) {
+        const t = await res.text();
+        let msg = `생성 실패 (${res.status})`;
+        try {
+          msg = (JSON.parse(t).error as string) ?? msg;
+        } catch {
+          /* HTML/텍스트 에러면 상태코드만 */
+        }
+        throw new Error(msg);
+      }
+
+      // SSE 스트림 파싱: 대주제별 진행 이벤트 → 진행바, done → 이동
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let finished = false;
+      while (!finished) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const chunks = buf.split("\n\n");
+        buf = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          const dataLine = chunk
+            .split("\n")
+            .find((l) => l.startsWith("data:"));
+          if (!dataLine) continue; // 하트비트 주석(: ping) 무시
+          const ev = JSON.parse(dataLine.slice(5).trim());
+          if (ev.type === "progress") {
+            setProgress({ done: ev.done, total: ev.total, current: ev.current });
+          } else if (ev.type === "done") {
+            finished = true;
+            window.location.href = "/dashboard";
+          } else if (ev.type === "error") {
+            throw new Error(ev.message ?? "생성 실패");
+          }
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -285,10 +328,27 @@ export default function OnboardingPage() {
             생성하면 현재 주제 트리가 새로 교체됩니다. (기존 진행 표시 ✅는
             사라집니다)
           </p>
+          {busy && progress && (
+            <div className="space-y-1">
+              <div className="h-2 w-full overflow-hidden rounded bg-neutral-200 dark:bg-neutral-800">
+                <div
+                  className="h-full rounded bg-blue-500 transition-all duration-300"
+                  style={{
+                    width: `${(progress.done / progress.total) * 100}%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-neutral-500">
+                {progress.current} 생성 중… ({progress.done}/{progress.total}{" "}
+                대주제)
+              </p>
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => setStep(2)}
-              className="rounded border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700"
+              disabled={busy}
+              className="rounded border border-neutral-300 px-4 py-2 text-sm disabled:opacity-40 dark:border-neutral-700"
             >
               이전
             </button>
@@ -297,7 +357,9 @@ export default function OnboardingPage() {
               disabled={busy}
               className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-40"
             >
-              {busy ? "주제 생성 중… (30초~1분)" : "주제 트리 생성"}
+              {busy && progress
+                ? `주제 생성 중… (${progress.done}/${progress.total})`
+                : "주제 트리 생성"}
             </button>
           </div>
         </section>

@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/webauth";
 import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
 import { runAgentText, extractJson } from "@/lib/agent";
 import { writeTaxonomy, type GenMajor } from "@/lib/taxonomyGen";
+import { majorTopicPrompt } from "@/lib/taxonomyPrompt";
 import { parseTaxonomy } from "@/lib/taxonomy";
 import { db } from "@/lib/db";
 
@@ -15,6 +16,11 @@ interface AreaSpec {
 }
 
 // 스텝4: 대주제·레벨에 맞춰 중/소주제 생성 → taxonomy.md 기록
+//
+// 대주제 하나에 전체 트리를 몰아 요청하면 응답이 60~120초 걸려, 앞단
+// Cloudflare(100초 하드 타임아웃)에 잘려 524 HTML이 돌아온다(→ 클라 JSON 파싱 실패).
+// 그래서 SSE로 열고, 대주제 단위로 나눠 claude를 호출하며 진행률을 흘려보낸다.
+// 매 대주제마다 이벤트가 흐르고 15초 하트비트도 있어 유휴 차단에 걸리지 않는다.
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
@@ -28,42 +34,72 @@ export async function POST(req: Request) {
     return Response.json({ error: "areas required" }, { status: 400 });
   }
 
-  const areaLines = valid
-    .map((a) => `- ${a.name}: 레벨 [${a.levels.sort().join(", ")}]`)
-    .join("\n");
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (ev: unknown) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+      // Cloudflare 100초 유휴 차단 방지: 한 대주제 생성이 길어져도 끊기지 않게
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": ping\n\n"));
+        } catch {
+          /* 이미 닫힘 */
+        }
+      }, 15000);
 
-  const prompt = `너는 기술 학습 커리큘럼(주제 트리)을 설계한다.
+      try {
+        const total = valid.length;
+        // 헤더·첫 바이트 즉시 플러시 (첫 대주제 생성 대기 동안 연결 유지)
+        send({ type: "progress", done: 0, total, current: valid[0].name });
 
-레벨 정의:
-- 레벨1 = 초급(입문, 개념 이해)
-- 레벨2 = 중급(실무 1~3년, 적용과 트레이드오프)
-- 레벨3 = 고급(10년차 실무/대규모 시스템 설계, 내부 동작·실패 모드·엣지케이스)
+        const topics: GenMajor[] = [];
+        for (let i = 0; i < valid.length; i++) {
+          const a = valid[i];
+          send({ type: "progress", done: i, total, current: a.name });
 
-아래 각 대주제에 대해, 지정된 레벨 범위에 맞는 중주제와 소주제를 생성하라.
-- 여러 레벨이 지정되면 그 범위를 모두 아우른다 (초급~고급 사다리).
-- 소주제는 구체적이고 딥다이브 가능한 항목으로 (예: "트랜잭션 격리 수준과 이상 현상", "B-Tree vs LSM-Tree 인덱스 내부구조").
-- 각 대주제당 중주제 3~6개, 중주제당 소주제 5~10개.
-- 학습 사다리 순서(쉬운→어려운)로 배열.
+          // 대주제 1개 생성 (형식이 흔들려 파싱 실패하면 1회 재시도)
+          let major: GenMajor | null = null;
+          for (let attempt = 0; attempt < 2 && !major; attempt++) {
+            try {
+              const text = await runAgentText({
+                prompt: majorTopicPrompt(a.name, a.levels),
+                rt,
+                token,
+              });
+              const parsed = extractJson<GenMajor>(text);
+              if (parsed?.mids?.length) {
+                // 대주제명은 사용자가 고른 값으로 고정 (모델이 바꾸지 않도록)
+                major = { major: a.name, mids: parsed.mids };
+              }
+            } catch {
+              /* 재시도 */
+            }
+          }
+          if (!major) throw new Error(`'${a.name}' 대주제 생성 실패`);
+          topics.push(major);
+        }
 
-입력 대주제와 레벨:
-${areaLines}
+        writeTaxonomy(rt, topics);
+        db.prepare("UPDATE users SET onboarded = 1 WHERE id = ?").run(user.id);
+        send({ type: "done", tree: parseTaxonomy(rt.home) });
+      } catch (e) {
+        send({
+          type: "error",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      } finally {
+        clearInterval(heartbeat);
+        controller.close();
+      }
+    },
+  });
 
-출력은 JSON만. 설명·코드펜스 없이:
-{"topics":[{"major":"백엔드","mids":[{"mid":"CS 기초","subs":["소주제1","소주제2"]}]}]}`;
-
-  try {
-    const text = await runAgentText({ prompt, rt, token });
-    const data = extractJson<{ topics: GenMajor[] }>(text);
-    if (!data.topics?.length) throw new Error("빈 트리 생성됨");
-
-    writeTaxonomy(rt, data.topics);
-    db.prepare("UPDATE users SET onboarded = 1 WHERE id = ?").run(user.id);
-
-    return Response.json({ tree: parseTaxonomy(rt.home) });
-  } catch (e) {
-    return Response.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    );
-  }
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }
