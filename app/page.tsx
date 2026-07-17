@@ -24,6 +24,11 @@ interface ArtifactLink {
   kind: "html" | "note";
 }
 
+interface RelatedArtifact extends ArtifactLink {
+  created_at?: string;
+  taxonomy_path?: string | null;
+}
+
 interface SessionSummary {
   id: number;
   topic: string | null;
@@ -49,6 +54,7 @@ export default function ChatPage() {
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [model, setModel] = useState("default");
+  const [related, setRelated] = useState<RelatedArtifact[]>([]);
   const [contextTokens, setContextTokens] = useState<number | null>(null);
   const [hudKey, setHudKey] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -67,6 +73,7 @@ export default function ChatPage() {
     setArtifacts(data.artifacts);
     setModel(data.session.model ?? "default");
     setContextTokens(data.session.context_tokens ?? null);
+    fetchRelated(data.session.topic ?? "");
     localStorage.setItem(LAST_SESSION_KEY, String(data.session.id));
     scrollToBottom();
   }
@@ -75,6 +82,15 @@ export default function ChatPage() {
     fetch("/api/sessions")
       .then((r) => r.json())
       .then((d) => setSessions(d.sessions ?? []));
+
+  // 현재 주제와 관련된 (과거 세션 포함) 산출물 조회 → 우측 패널
+  const fetchRelated = (topic: string) => {
+    if (!topic.trim()) return setRelated([]);
+    fetch(`/api/artifacts/search?q=${encodeURIComponent(topic)}`)
+      .then((r) => r.json())
+      .then((d) => setRelated(d.artifacts ?? []))
+      .catch(() => {});
+  };
 
   useEffect(() => {
     refreshSessions();
@@ -160,6 +176,7 @@ export default function ChatPage() {
           } else if (ev.type === "tool") {
             setToolStatus(`도구 실행 중: ${ev.name}`);
           } else if (ev.type === "done") {
+            if (sessionId === null) fetchRelated(message);
             setSessionId(ev.sessionId);
             localStorage.setItem(LAST_SESSION_KEY, String(ev.sessionId));
             if (ev.artifacts?.length) {
@@ -196,6 +213,7 @@ export default function ChatPage() {
     setArtifacts([]);
     setToolStatus(null);
     setContextTokens(null);
+    setRelated([]);
     localStorage.removeItem(LAST_SESSION_KEY);
   }
 
@@ -370,6 +388,64 @@ export default function ChatPage() {
         </button>
         </form>
       </main>
+
+      {/* 우측 산출물 패널: 이 세션 산출물 + 같은 주제의 과거 산출물 */}
+      {(artifacts.length > 0 || related.length > 0) && (
+        <aside className="slim-scroll hidden w-64 shrink-0 overflow-y-auto border-l border-neutral-200 p-3 xl:block dark:border-neutral-800">
+          <h2 className="mb-2 text-sm font-semibold">산출물</h2>
+          {artifacts.length > 0 && (
+            <div className="mb-4">
+              <div className="mb-1 text-[11px] font-medium text-emerald-500">
+                이 세션에서 생성
+              </div>
+              <ul className="space-y-1">
+                {artifacts.map((a) => (
+                  <li key={a.id}>
+                    <a
+                      href={`/artifacts/${a.id}`}
+                      target="_blank"
+                      className="block truncate rounded px-1 py-0.5 text-xs text-blue-500 hover:bg-blue-500/10"
+                      title={a.title}
+                    >
+                      {a.kind === "html" ? "🌐" : "📝"} {a.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {related.filter((r) => !artifacts.some((a) => a.id === r.id))
+            .length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] font-medium text-neutral-500">
+                이 주제의 기존 산출물
+              </div>
+              <ul className="space-y-1">
+                {related
+                  .filter((r) => !artifacts.some((a) => a.id === r.id))
+                  .map((r) => (
+                    <li key={r.id}>
+                      <a
+                        href={`/artifacts/${r.id}`}
+                        target="_blank"
+                        className="block rounded px-1 py-0.5 text-xs hover:bg-blue-500/10"
+                        title={r.title}
+                      >
+                        <span className="block truncate text-blue-500">
+                          {r.kind === "html" ? "🌐" : "📝"} {r.title}
+                        </span>
+                        <span className="block truncate text-[10px] text-neutral-500">
+                          {r.taxonomy_path}
+                          {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ""}
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+        </aside>
+      )}
     </div>
   );
 }
