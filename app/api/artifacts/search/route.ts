@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/webauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,8 @@ interface Row {
 // 주제 문자열과 관련된 산출물 검색 (토큰 매칭 스코어링)
 // 예: "인덱스 내부 구조 (B-Tree vs LSM-Tree)" ↔ "btree-vs-lsm-techtalk.html"
 export async function GET(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const q = req.nextUrl.searchParams.get("q") ?? "";
   const tokens = (q.toLowerCase().match(/[가-힣a-z0-9+]{2,}/g) ?? []).filter(
     (t) => !["vs", "및", "그리고", "대해", "관련"].includes(t)
@@ -24,9 +27,9 @@ export async function GET(req: NextRequest) {
 
   const rows = db
     .prepare(
-      "SELECT id, title, slug, kind, taxonomy_path, created_at FROM artifacts ORDER BY id DESC LIMIT 300"
+      "SELECT id, title, slug, kind, taxonomy_path, created_at FROM artifacts WHERE user_id = ? ORDER BY id DESC LIMIT 300"
     )
-    .all() as Row[];
+    .all(user.id) as Row[];
 
   const scored = rows
     .map((r) => {

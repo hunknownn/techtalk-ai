@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { parseTaxonomy } from "@/lib/taxonomy";
+import { getCurrentUser } from "@/lib/webauth";
+import { ensureUserRuntime } from "@/lib/userenv";
 import { RescanButton } from "./rescan-button";
 import { SessionList } from "./session-list";
 import { CoverageTree } from "./coverage-tree";
@@ -27,26 +30,29 @@ interface RepeatRow {
   cnt: number;
 }
 
-export default function DashboardPage() {
-  const tree = parseTaxonomy();
+export default async function DashboardPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const rt = ensureUserRuntime(user);
+  const tree = parseTaxonomy(rt.home);
   const totalLeaves = tree.flatMap((t) => t.mids.flatMap((m) => m.leaves));
   const coveredCount = totalLeaves.filter((l) => l.covered).length;
 
   const recentSessions = db
     .prepare(
-      "SELECT id, topic, mode, created_at FROM sessions WHERE deleted = 0 ORDER BY id DESC LIMIT 20"
+      "SELECT id, topic, mode, created_at FROM sessions WHERE deleted = 0 AND user_id = ? ORDER BY id DESC LIMIT 20"
     )
-    .all() as SessionRow[];
+    .all(user.id) as SessionRow[];
   const recentArtifacts = db
     .prepare(
-      "SELECT id, title, kind, taxonomy_path, created_at FROM artifacts ORDER BY id DESC LIMIT 10"
+      "SELECT id, title, kind, taxonomy_path, created_at FROM artifacts WHERE user_id = ? ORDER BY id DESC LIMIT 10"
     )
-    .all() as ArtifactRow[];
+    .all(user.id) as ArtifactRow[];
   const repeats = db
     .prepare(
-      "SELECT topic, COUNT(*) as cnt FROM sessions WHERE topic IS NOT NULL GROUP BY topic HAVING cnt > 1 ORDER BY cnt DESC LIMIT 10"
+      "SELECT topic, COUNT(*) as cnt FROM sessions WHERE topic IS NOT NULL AND user_id = ? GROUP BY topic HAVING cnt > 1 ORDER BY cnt DESC LIMIT 10"
     )
-    .all() as RepeatRow[];
+    .all(user.id) as RepeatRow[];
 
   // 다음 추천: 미커버 소주제 앞에서부터 (taxonomy가 학습 사다리 순서로 배열돼 있음)
   const recommendations = totalLeaves.filter((l) => !l.covered).slice(0, 6);

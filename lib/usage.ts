@@ -1,12 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 /**
- * 구독 계정 사용량 HUD 데이터.
- * Claude Code가 /usage에서 쓰는 OAuth 엔드포인트를 같은 토큰으로 조회한다.
- * 액세스 토큰이 stale이면(만료 후 CLI가 아직 안 돌았음) stale: true로 응답 —
- * 다음 대화가 돌면 CLI가 토큰을 갱신하므로 자연 회복된다.
+ * 구독 계정 사용량 HUD — 본인 장기 토큰으로 조회.
+ * (기본 인증 폴백 없음: 토큰 미연결이면 stale)
  */
 
 export interface UsageWindow {
@@ -25,25 +19,14 @@ interface OauthWindow {
   resets_at?: string;
 }
 
-export async function fetchUsageHud(): Promise<UsageHud> {
-  let accessToken: string;
-  try {
-    accessToken = JSON.parse(
-      fs.readFileSync(
-        path.join(os.homedir(), ".claude", ".credentials.json"),
-        "utf-8"
-      )
-    ).claudeAiOauth.accessToken;
-  } catch {
-    return { stale: true, fiveHour: null, sevenDay: null };
-  }
+export async function fetchUsageHud(token: string | null): Promise<UsageHud> {
+  if (!token) return { stale: true, fiveHour: null, sevenDay: null };
 
   const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${token}`,
       "anthropic-beta": "oauth-2025-04-20",
     },
-    // HUD는 실시간성이 중요하지 않음
     cache: "no-store",
   });
 

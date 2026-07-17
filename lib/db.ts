@@ -41,11 +41,28 @@ function createDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // 멀티유저: 사용자·웹세션 테이블
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      home_dir TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS web_sessions (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
   // 마이그레이션: 기존 DB에 없는 컬럼 추가 (이미 있으면 무시)
   for (const ddl of [
     "ALTER TABLE sessions ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE sessions ADD COLUMN model TEXT",
     "ALTER TABLE sessions ADD COLUMN context_tokens INTEGER",
+    "ALTER TABLE sessions ADD COLUMN user_id INTEGER",
+    "ALTER TABLE artifacts ADD COLUMN user_id INTEGER",
   ]) {
     try {
       db.exec(ddl);

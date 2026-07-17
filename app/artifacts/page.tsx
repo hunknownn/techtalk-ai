@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/webauth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +13,14 @@ interface ArtifactListRow {
   created_at: string;
 }
 
-export default function ArtifactsPage() {
+export default async function ArtifactsPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
   const rows = db
     .prepare(
-      "SELECT id, title, kind, taxonomy_path, created_at FROM artifacts ORDER BY id DESC"
+      "SELECT id, title, kind, taxonomy_path, created_at FROM artifacts WHERE user_id = ? ORDER BY id DESC"
     )
-    .all() as ArtifactListRow[];
+    .all(user.id) as ArtifactListRow[];
 
   return (
     <main className="mx-auto max-w-3xl p-6">

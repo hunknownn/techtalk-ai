@@ -22,16 +22,22 @@ export interface TaxonomyTop {
  * (스킬은 산출 시 ✅ 마킹·새 소주제 추가로 이 파일을 키운다).
  * 없으면 저장소에 구운 시드 사본으로 폴백.
  */
-function taxonomyPath(): string | null {
+function taxonomyPath(homeDir?: string): string | null {
   const candidates = [
-    path.join(os.homedir(), ".claude", "skills", "techtalk", "taxonomy.md"),
+    path.join(
+      homeDir ?? os.homedir(),
+      ".claude",
+      "skills",
+      "techtalk",
+      "taxonomy.md"
+    ),
     path.join(process.cwd(), "skills", "techtalk", "taxonomy.md"),
   ];
   return candidates.find((p) => fs.existsSync(p)) ?? null;
 }
 
-export function parseTaxonomy(): TaxonomyTop[] {
-  const file = taxonomyPath();
+export function parseTaxonomy(homeDir?: string): TaxonomyTop[] {
+  const file = taxonomyPath(homeDir);
   if (!file) return [];
   const tree: TaxonomyTop[] = [];
 

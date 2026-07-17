@@ -1,19 +1,23 @@
 import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/webauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// 세션 복원: 메시지 이력 + 생성된 산출물까지 함께 반환
+// 세션 복원: 메시지 이력 + 생성된 산출물까지 함께 반환 (본인 것만)
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const session = db
     .prepare(
-      "SELECT id, topic, mode, model, context_tokens, created_at FROM sessions WHERE id = ? AND deleted = 0"
+      "SELECT id, topic, mode, model, context_tokens, created_at FROM sessions WHERE id = ? AND deleted = 0 AND user_id = ?"
     )
-    .get(Number(id));
+    .get(Number(id), user.id);
   if (!session) return Response.json({ error: "not found" }, { status: 404 });
 
   const messages = db
@@ -30,15 +34,18 @@ export async function GET(
   return Response.json({ session, messages, artifacts });
 }
 
-// 세션 숨김(소프트 삭제): 목록·복원에서 제외되지만 DB와 산출물은 보존
+// 세션 숨김(소프트 삭제): 본인 것만
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const result = db
-    .prepare("UPDATE sessions SET deleted = 1 WHERE id = ?")
-    .run(Number(id));
+    .prepare("UPDATE sessions SET deleted = 1 WHERE id = ? AND user_id = ?")
+    .run(Number(id), user.id);
   if (result.changes === 0) {
     return Response.json({ error: "not found" }, { status: 404 });
   }

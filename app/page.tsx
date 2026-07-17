@@ -58,6 +58,10 @@ export default function ChatPage() {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [contextTokens, setContextTokens] = useState<number | null>(null);
   const [hudKey, setHudKey] = useState(0);
+  const [me, setMe] = useState<{
+    username: string;
+    subscriptionBound: boolean;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // 세션 복원: DB에 저장된 이력을 불러와 이어간다 (SDK resume으로 맥락 유지)
@@ -96,6 +100,18 @@ export default function ChatPage() {
   };
 
   useEffect(() => {
+    // 로그인 게이트: 미로그인 → /login, 구독 미연결 → 배너 표시
+    fetch("/api/me").then(async (r) => {
+      if (r.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      const d = await r.json();
+      setMe({
+        username: d.user.username,
+        subscriptionBound: d.subscriptionBound,
+      });
+    });
     refreshSessions();
     // 대시보드 등에서 진입: ?session=<id> 세션 열기, ?topic=<주제> 입력 프리필
     const params = new URLSearchParams(window.location.search);
@@ -307,6 +323,18 @@ export default function ChatPage() {
               삭제
             </button>
           )}
+          {me && (
+            <button
+              onClick={async () => {
+                await fetch("/api/logout", { method: "POST" });
+                window.location.href = "/login";
+              }}
+              className="text-neutral-400 hover:underline"
+              title={`${me.username} 로그아웃`}
+            >
+              로그아웃
+            </button>
+          )}
         </nav>
       </header>
 
@@ -328,6 +356,17 @@ export default function ChatPage() {
           </button>
         ))}
       </div>
+
+      {/* 구독 미연결 게이트: 본인 토큰 없이는 대화 불가 (폴백 없음) */}
+      {me && !me.subscriptionBound && (
+        <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+          아직 Claude 구독이 연결되지 않았습니다. 대화하려면{" "}
+          <a href="/auth" className="font-medium text-blue-500 hover:underline">
+            구독 연결
+          </a>
+          을 먼저 완료하세요. (본인 Claude 계정으로 1회, 만료 전까지 유지)
+        </div>
+      )}
 
       <div className="slim-scroll flex-1 space-y-4 overflow-y-auto rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         {messages.length === 0 && (
@@ -394,7 +433,7 @@ export default function ChatPage() {
         />
         <button
           type="submit"
-          disabled={busy || !input.trim()}
+          disabled={busy || !input.trim() || (me !== null && !me.subscriptionBound)}
           className="rounded-lg bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-40"
         >
           전송

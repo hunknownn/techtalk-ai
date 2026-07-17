@@ -1,32 +1,31 @@
 import fs from "node:fs";
-import { isAdminAuthorized } from "@/lib/admin-guard";
-import {
-  reauthSession,
-  readCredentialsExpiry,
-  TOKEN_FILE,
-} from "@/lib/reauth";
+import { getCurrentUser } from "@/lib/webauth";
+import { ensureUserRuntime } from "@/lib/userenv";
+import { getReauthSession } from "@/lib/reauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
-  if (!isAdminAuthorized(req)) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
-  }
-  const credentials = readCredentialsExpiry();
-  let longLivedToken: { exists: boolean; createdAt: string | null } = {
+// 현재 로그인 사용자의 구독 토큰 상태 + 진행 중 연결 플로우
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+
+  const rt = ensureUserRuntime(user);
+  let token: { exists: boolean; createdAt: string | null } = {
     exists: false,
     createdAt: null,
   };
   try {
-    const parsed = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf-8"));
-    longLivedToken = { exists: true, createdAt: parsed.createdAt ?? null };
+    const parsed = JSON.parse(fs.readFileSync(rt.tokenFile, "utf-8"));
+    token = { exists: true, createdAt: parsed.createdAt ?? null };
   } catch {
-    /* 토큰 파일 없음 */
+    /* 미연결 */
   }
+
   return Response.json({
-    credentials,
-    longLivedToken,
-    reauth: reauthSession.state,
+    username: user.username,
+    token,
+    reauth: getReauthSession(user.id, rt.tokenFile).state,
   });
 }

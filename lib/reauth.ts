@@ -4,9 +4,12 @@ import path from "node:path";
 import * as pty from "node-pty";
 
 /**
- * 웹 재인증: `claude setup-token`(구독용 장기 토큰 발급)을 PTY로 구동해
+ * 구독 토큰 바인딩: `claude setup-token`을 PTY로 구동해
  * 인증 URL을 웹에 보여주고, 사용자가 붙여넣은 코드를 stdin으로 전달한다.
- * SSH 없이 브라우저만으로 토큰 갱신이 목적.
+ *
+ * 핵심: 토큰의 주인은 "OAuth URL에 누가 로그인했나"로 결정된다.
+ * 그래서 프로세스는 온보딩이 끝난 파드 기본 홈에서 돌리고(신선한 홈의
+ * TUI 온보딩 함정 회피), 발급된 토큰만 요청한 사용자의 슬롯에 저장한다.
  */
 
 type Phase = "idle" | "starting" | "waiting_code" | "exchanging" | "done" | "error";
@@ -17,10 +20,6 @@ export interface ReauthState {
   message: string | null;
 }
 
-const DATA_DIR =
-  process.env.TECHTALK_DATA_DIR ?? path.join(process.cwd(), "data");
-export const TOKEN_FILE = path.join(DATA_DIR, "claude-oauth.json");
-
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
 
 // eslint-disable-next-line no-control-regex
@@ -30,6 +29,7 @@ class ReauthSession {
   private proc: pty.IPty | null = null;
   private buffer = "";
   private timeout: NodeJS.Timeout | null = null;
+  constructor(private tokenFile: string) {}
   state: ReauthState = { phase: "idle", url: null, message: null };
 
   start() {
@@ -82,7 +82,6 @@ class ReauthSession {
   private handleOutput(chunk: string) {
     this.buffer += chunk.replace(ANSI_RE, "");
 
-    // 인증 URL 감지 → 사용자에게 표시할 단계
     if (!this.state.url) {
       const url = this.buffer.match(
         /https:\/\/(?:claude\.(?:ai|com)|console\.anthropic\.com)\/[^\s"')]+/
@@ -92,19 +91,18 @@ class ReauthSession {
       }
     }
 
-    // 장기 토큰 발급 성공 감지 → 저장
     const token = this.buffer.match(/sk-ant-oat01-[A-Za-z0-9_-]{20,}/);
     if (token && this.state.phase !== "done") {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.mkdirSync(path.dirname(this.tokenFile), { recursive: true });
       fs.writeFileSync(
-        TOKEN_FILE,
+        this.tokenFile,
         JSON.stringify({ token: token[0], createdAt: new Date().toISOString() }),
         { mode: 0o600 }
       );
       this.state = {
         phase: "done",
         url: null,
-        message: "토큰 발급 완료. 이후 대화부터 새 토큰을 사용합니다.",
+        message: "구독 연결 완료. 이제 대화를 시작할 수 있습니다.",
       };
       this.stop();
     }
@@ -112,7 +110,7 @@ class ReauthSession {
 
   submitCode(code: string) {
     if (!this.proc || this.state.phase !== "waiting_code") {
-      throw new Error("코드를 받을 단계가 아닙니다. 재인증을 먼저 시작하세요.");
+      throw new Error("코드를 받을 단계가 아닙니다. 연결을 먼저 시작하세요.");
     }
     this.state = { ...this.state, phase: "exchanging" };
     this.proc.write(code.trim() + "\r");
@@ -133,39 +131,20 @@ class ReauthSession {
   }
 }
 
-// 핫리로드·요청 간 단일 세션 유지 (동시 재인증은 의미 없음)
-const g = globalThis as unknown as { __reauthSession?: ReauthSession };
-export const reauthSession =
-  g.__reauthSession ?? (g.__reauthSession = new ReauthSession());
+// 사용자별 재인증 세션 (핫리로드에도 유지)
+const g = globalThis as unknown as {
+  __reauthSessions?: Map<number, ReauthSession>;
+};
+const sessions = g.__reauthSessions ?? (g.__reauthSessions = new Map());
 
-/** 저장된 장기 토큰 (없으면 null). 채팅 라우트가 env로 주입해 사용 */
-export function readLongLivedToken(): string | null {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf-8"));
-    return typeof parsed.token === "string" ? parsed.token : null;
-  } catch {
-    return null;
+export function getReauthSession(
+  userId: number,
+  tokenFile: string
+): ReauthSession {
+  let s = sessions.get(userId);
+  if (!s) {
+    s = new ReauthSession(tokenFile);
+    sessions.set(userId, s);
   }
-}
-
-/** 기본 인증(.credentials.json)의 만료 시각 조회 */
-export function readCredentialsExpiry(): {
-  exists: boolean;
-  expiresAt: string | null;
-} {
-  try {
-    const raw = JSON.parse(
-      fs.readFileSync(
-        path.join(os.homedir(), ".claude", ".credentials.json"),
-        "utf-8"
-      )
-    );
-    const ms = raw?.claudeAiOauth?.expiresAt;
-    return {
-      exists: true,
-      expiresAt: typeof ms === "number" ? new Date(ms).toISOString() : null,
-    };
-  } catch {
-    return { exists: false, expiresAt: null };
-  }
+  return s;
 }
