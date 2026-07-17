@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { TaxonomyTree } from "./taxonomy-tree";
 
 type Mode = "produce" | "socratic" | "drill";
 
@@ -157,10 +158,39 @@ export default function ChatPage() {
     localStorage.removeItem(LAST_SESSION_KEY);
   }
 
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
   return (
-    <main className="mx-auto flex h-dvh max-w-3xl flex-col p-4">
-      <header className="mb-3 flex items-center justify-between">
-        <h1 className="text-xl font-bold">techtalk</h1>
+    <div className="flex h-dvh">
+      {/* 좌측 주제 트리 (접기 가능, 모바일에선 숨김) */}
+      {sidebarOpen && (
+        <aside className="hidden w-72 shrink-0 overflow-y-auto border-r border-neutral-200 md:block dark:border-neutral-800">
+          <div className="sticky top-0 flex items-center justify-between border-b border-neutral-200 bg-white/90 px-3 py-2 backdrop-blur dark:border-neutral-800 dark:bg-black/90">
+            <span className="text-sm font-semibold">주제</span>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="text-xs text-neutral-500 hover:text-neutral-300"
+              title="사이드바 접기"
+            >
+              ◀
+            </button>
+          </div>
+          <TaxonomyTree onPick={(topic) => setInput(topic)} />
+        </aside>
+      )}
+
+      <main className="mx-auto flex h-dvh w-full max-w-5xl flex-1 flex-col p-4">
+        <header className="mb-3 flex items-center justify-between">
+          {!sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="mr-2 hidden text-xs text-neutral-500 hover:text-neutral-300 md:block"
+              title="사이드바 펼치기"
+            >
+              ▶ 주제
+            </button>
+          )}
+        <h1 className="flex-1 text-xl font-bold">techtalk</h1>
         <nav className="flex items-center gap-3 text-sm">
           {sessions.length > 0 && (
             <select
@@ -283,7 +313,8 @@ export default function ChatPage() {
         >
           전송
         </button>
-      </form>
-    </main>
+        </form>
+      </main>
+    </div>
   );
 }
