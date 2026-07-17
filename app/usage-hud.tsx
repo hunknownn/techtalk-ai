@@ -12,6 +12,9 @@ interface UsageHud {
   sevenDay: UsageWindow | null;
 }
 
+// 표준 컨텍스트 윈도 200k 기준
+const CONTEXT_LIMIT = 200_000;
+
 function pctColor(p: number) {
   if (p >= 90) return "text-red-500";
   if (p >= 70) return "text-amber-500";
@@ -81,10 +84,14 @@ export function UsageHud({
       )}
       {contextTokens !== null && (
         <span
-          className="text-neutral-500"
-          title="현재 세션의 컨텍스트 크기 (마지막 턴 입력 토큰, 캐시 포함)"
+          className={pctColor((contextTokens / CONTEXT_LIMIT) * 100)}
+          title={`현재 세션의 컨텍스트 크기 (마지막 턴 입력 토큰, 캐시 포함) — 한도 ${CONTEXT_LIMIT / 1000}k 기준`}
         >
-          ctx {contextTokens >= 1000 ? `${Math.round(contextTokens / 1000)}k` : contextTokens}
+          ctx{" "}
+          {contextTokens >= 1000
+            ? `${Math.round(contextTokens / 1000)}k`
+            : contextTokens}{" "}
+          ({Math.round((contextTokens / CONTEXT_LIMIT) * 100)}%)
         </span>
       )}
     </div>
