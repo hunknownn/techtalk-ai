@@ -28,6 +28,94 @@ body {
   font-family: var(--font-sans);
 }
 
+/* 채팅 마크다운: typography 플러그인 없이 필요한 최소 스타일만 정의 */
+.chat-markdown > *:first-child {
+  margin-top: 0;
+}
+.chat-markdown > *:last-child {
+  margin-bottom: 0;
+}
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown pre,
+.chat-markdown blockquote,
+.chat-markdown table {
+  margin: 0.5rem 0;
+}
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.chat-markdown h1 {
+  font-size: 1.15rem;
+}
+.chat-markdown h2 {
+  font-size: 1.05rem;
+}
+.chat-markdown h3,
+.chat-markdown h4 {
+  font-size: 1rem;
+}
+.chat-markdown ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.chat-markdown ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.chat-markdown li {
+  margin: 0.15rem 0;
+}
+.chat-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.chat-markdown pre {
+  background: rgba(128, 128, 128, 0.1);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+.chat-markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.chat-markdown blockquote {
+  border-left: 3px solid rgba(128, 128, 128, 0.35);
+  padding-left: 0.75rem;
+  color: rgba(128, 128, 128, 0.9);
+}
+.chat-markdown table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+}
+.chat-markdown hr {
+  border: none;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  margin: 1rem 0;
+}
+
 /* 슬림 스크롤바: 공간은 미리 선점(레이아웃 안 튐), 평소엔 숨고 호버 시 표시 */
 .slim-scroll {
   scrollbar-gutter: stable;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Markdown } from "./markdown";
 import { TaxonomyTree } from "./taxonomy-tree";
 import { UsageHud } from "./usage-hud";
 
@@ -409,23 +410,26 @@ export default function ChatPage() {
             인덱스&quot;, &quot;kafka 컨슈머 그룹 리밸런싱&quot;)
           </p>
         )}
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`whitespace-pre-wrap text-sm leading-relaxed ${
-              m.role === "user"
-                ? "ml-auto max-w-[85%] rounded-lg bg-blue-500/10 p-3"
-                : ""
-            }`}
-          >
-            {m.content ||
-              (busy && i === messages.length - 1 ? (
+        {messages.map((m, i) =>
+          m.role === "user" ? (
+            <div
+              key={i}
+              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-lg bg-blue-500/10 p-3 text-sm leading-relaxed"
+            >
+              {m.content}
+            </div>
+          ) : (
+            <div key={i} className="text-sm leading-relaxed">
+              {m.content ? (
+                <Markdown text={m.content} />
+              ) : busy && i === messages.length - 1 ? (
                 <span className="text-neutral-400">
                   {toolStatus ?? "생각 중…"}
                 </span>
-              ) : null)}
-          </div>
-        ))}
+              ) : null}
+            </div>
+          )
+        )}
         {artifacts.length > 0 && (
           <div className="rounded-lg border border-green-500/40 bg-green-500/5 p-3 text-sm">
             <div className="mb-1 font-semibold">생성된 산출물</div>
