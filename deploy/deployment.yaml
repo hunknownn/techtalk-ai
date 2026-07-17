@@ -6,8 +6,14 @@ metadata:
 spec:
   # 인증 토큰·SQLite가 단일 PVC에 묶이므로 수평 확장 금지 (개인용 설계)
   replicas: 1
+  # 무중단 배포: 새 파드가 Ready된 뒤 옛 파드를 내린다(503 방지).
+  # 단일 노드라 RWO PVC를 두 파드가 잠깐 함께 마운트해도 되고,
+  # SQLite는 WAL+busy_timeout으로 겹치는 ~20초의 동시 접근을 견딘다.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: techtalk-web
