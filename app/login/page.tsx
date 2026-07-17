@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PasswordInput } from "../password-input";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -46,13 +47,11 @@ export default function LoginPage() {
           autoComplete="username"
           className="w-full rounded border border-neutral-300 bg-transparent p-2 text-sm dark:border-neutral-700"
         />
-        <input
-          type="password"
+        <PasswordInput
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={setPassword}
           placeholder="비밀번호"
           autoComplete="current-password"
-          className="w-full rounded border border-neutral-300 bg-transparent p-2 text-sm dark:border-neutral-700"
         />
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button

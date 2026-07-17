@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PasswordInput } from "../password-input";
 
 export default function SignupPage() {
   const [username, setUsername] = useState("");
@@ -82,16 +83,14 @@ export default function SignupPage() {
             </p>
           )}
         </div>
-        <input
-          type="password"
+        <PasswordInput
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={setPassword}
           placeholder="비밀번호 (8자 이상)"
           autoComplete="new-password"
-          className="w-full rounded border border-neutral-300 bg-transparent p-2 text-sm dark:border-neutral-700"
         />
         <input
-          type="password"
+          type="text"
           value={invite}
           onChange={(e) => setInvite(e.target.value)}
           placeholder="가입 코드 (운영자에게 받으세요)"
