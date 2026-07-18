@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { ingestNewArtifacts } from "@/lib/ingest";
 import { getCurrentUser } from "@/lib/webauth";
 import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
-import { saveRateLimitEvent } from "@/lib/usage";
+import { saveUsageSnapshot } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -166,11 +166,6 @@ export async function POST(req: NextRequest) {
                 (u.cache_read_input_tokens ?? 0) +
                 (u.cache_creation_input_tokens ?? 0);
             }
-          } else if (msg.type === "rate_limit_event") {
-            // TODO(debug): 실제 페이로드 형태 확인용 임시 로그 — 확인 후 제거
-            console.log("[chat:rate_limit_info]", JSON.stringify(msg.rate_limit_info));
-            // 구독 사용량(5h/주간) — HUD가 /api/usage로 읽어감
-            saveRateLimitEvent(user.id, msg.rate_limit_info);
           } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
             // 자동 압축(컨텍스트 한도 근접 시 SDK가 알아서 요약)도 여기서 감지된다
             const { trigger, pre_tokens, post_tokens } = msg.compact_metadata;
@@ -182,6 +177,16 @@ export async function POST(req: NextRequest) {
               postTokens: post_tokens ?? null,
             });
           }
+        }
+
+        // 구독 사용량(5h/주간) — CLI `/usage`와 동일한 데이터. 실험적 API라 실패해도 채팅엔 영향 없게 무시.
+        try {
+          const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
+          if (usage.rate_limits_available && usage.rate_limits) {
+            saveUsageSnapshot(user.id, usage.rate_limits);
+          }
+        } catch {
+          /* 실험적 API — 조회 실패해도 채팅 자체는 정상 진행 */
         }
 
         db.prepare(

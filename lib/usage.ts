@@ -1,7 +1,10 @@
 /**
- * 구독 계정 사용량 HUD — SDK가 대화 스트림에 내려주는 rate_limit_event를
- * 사용자별로 저장해 두었다가 조회한다.
- * (별도 usage API 호출 없음: 첫 대화 턴이 돌기 전에는 stale)
+ * 구독 계정 사용량 HUD — SDK의 실험적 usage 컨트롤 메서드
+ * (CLI `/usage`가 쓰는 것과 동일한 데이터, five_hour/seven_day 이미 구분되어 옴)로
+ * 조회한 값을 사용자별로 저장해 두었다가 HUD가 읽는다.
+ *
+ * (rate_limit_event 스트림 이벤트는 한도 근접 시에만 utilization을 실어 보내고
+ * 평상시엔 그 필드 자체가 없어 신뢰할 수 없었다 — 실제 페이로드 로그로 확인 후 폐기.)
  */
 
 import { db } from "./db";
@@ -17,11 +20,10 @@ export interface UsageHud {
   sevenDay: UsageWindow | null;
 }
 
-/** SDK rate_limit_event 페이로드 중 HUD가 쓰는 부분 */
-export interface RateLimitInfoLike {
-  rateLimitType?: string;
-  utilization?: number;
-  resetsAt?: number;
+/** usage_EXPERIMENTAL_...().rate_limits 중 HUD가 쓰는 부분 */
+export interface RateLimitsSnapshot {
+  five_hour?: { utilization: number | null; resets_at: string | null } | null;
+  seven_day?: { utilization: number | null; resets_at: string | null } | null;
 }
 
 interface StoredRateLimits {
@@ -36,45 +38,32 @@ function readStored(userId: number): StoredRateLimits {
   try {
     return JSON.parse(row?.rate_limits ?? "{}") as StoredRateLimits;
   } catch {
-    return {}; // 손상된 JSON은 버리고 다음 이벤트로 재구축
+    return {}; // 손상된 JSON은 버리고 다음 조회로 재구축
   }
 }
 
-function toIso(epoch?: number): string | null {
-  if (typeof epoch !== "number") return null;
-  // epoch가 초/밀리초 어느 단위로 와도 처리
-  return new Date(epoch < 1e12 ? epoch * 1000 : epoch).toISOString();
-}
-
-/**
- * SDK의 rateLimitType은 five_hour/seven_day 외에 모델별 세분 값
- * (seven_day_opus, seven_day_sonnet, seven_day_overage_included)도 온다.
- * HUD는 5h/주간 두 창만 보여주므로 seven_day* 계열은 전부 seven_day로 합친다.
- */
-function normalizeWindow(t?: string): "five_hour" | "seven_day" | null {
-  if (t === "five_hour") return "five_hour";
-  if (t?.startsWith("seven_day")) return "seven_day";
-  return null;
-}
-
-/** 대화 스트림의 rate_limit_event를 저장 — HUD가 쓰는 five_hour/seven_day 창만 */
-export function saveRateLimitEvent(userId: number, info: RateLimitInfoLike) {
-  const window = normalizeWindow(info.rateLimitType);
-  if (!window) return;
-  if (typeof info.utilization !== "number") return;
-
+/** 대화 턴이 끝난 뒤 조회한 사용량 스냅샷 저장 — 온 창만 갱신, 없는 창은 이전 값 유지 */
+export function saveUsageSnapshot(userId: number, rateLimits: RateLimitsSnapshot) {
   const stored = readStored(userId);
-  stored[window] = {
-    utilization: info.utilization,
-    resetsAt: toIso(info.resetsAt),
-  };
-  db.prepare("UPDATE users SET rate_limits = ? WHERE id = ?").run(
-    JSON.stringify(stored),
-    userId
-  );
+  let changed = false;
+
+  for (const key of ["five_hour", "seven_day"] as const) {
+    const w = rateLimits[key];
+    if (w && typeof w.utilization === "number") {
+      stored[key] = { utilization: w.utilization, resetsAt: w.resets_at ?? null };
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    db.prepare("UPDATE users SET rate_limits = ? WHERE id = ?").run(
+      JSON.stringify(stored),
+      userId
+    );
+  }
 }
 
-/** 저장된 사용량 조회 — 이벤트를 아직 한 번도 못 받았으면 stale */
+/** 저장된 사용량 조회 — 한 번도 못 받았으면 stale */
 export function readStoredUsage(userId: number): UsageHud {
   const stored = readStored(userId);
   const fiveHour = stored.five_hour ?? null;
