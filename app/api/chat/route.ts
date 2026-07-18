@@ -158,6 +158,26 @@ export async function POST(req: NextRequest) {
                 send({ type: "tool", name: block.name });
               }
             }
+            // 컨트롤 메서드는 프로세스가 살아있는 동안(= 루프 안에서)만 호출 가능하다.
+            // query()에 문자열 프롬프트를 주면 SDK가 "단일 턴"으로 보고 result
+            // 수신 즉시 stdin을 닫아버려서, 루프 종료 후에는 항상
+            // "ProcessTransport is not ready for writing"로 실패한다.
+            // assistant 메시지마다 최신값으로 덮어써서, 마지막 호출 결과가 최종값이 되게 한다.
+            try {
+              const ctxUsage = await q.getContextUsage();
+              contextTokens = ctxUsage.totalTokens;
+              contextMaxTokens = ctxUsage.maxTokens;
+            } catch (e) {
+              console.error("[chat:getContextUsage failed]", e);
+            }
+            try {
+              const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
+              if (usage.rate_limits_available && usage.rate_limits) {
+                saveUsageSnapshot(user.id, usage.rate_limits);
+              }
+            } catch (e) {
+              console.error("[chat:usage_EXPERIMENTAL failed]", e);
+            }
           } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
             // 자동 압축(컨텍스트 한도 근접 시 SDK가 알아서 요약)도 여기서 감지된다
             const { trigger, pre_tokens, post_tokens } = msg.compact_metadata;
@@ -168,36 +188,6 @@ export async function POST(req: NextRequest) {
               postTokens: post_tokens ?? null,
             });
           }
-        }
-
-        // 컨텍스트 크기 — CLI 상태줄과 동일한 SDK 공식 계산(모델별 실제 한도 기준).
-        // 직접 usage 필드를 더해 200k로 나누던 예전 방식은 모델마다 다른 실제
-        // 컨텍스트 윈도를 반영 못 해 로컬 CLI와 표시가 어긋났다.
-        try {
-          const ctxUsage = await q.getContextUsage();
-          contextTokens = ctxUsage.totalTokens;
-          contextMaxTokens = ctxUsage.maxTokens;
-        } catch (e) {
-          // 조회 실패해도 채팅 자체는 정상 진행 — 원인은 로그로 남긴다
-          console.error("[chat:getContextUsage failed]", e);
-        }
-
-        // 구독 사용량(5h/주간) — CLI `/usage`와 동일한 데이터. 실험적 API라 실패해도 채팅엔 영향 없게 무시.
-        try {
-          const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
-          if (usage.rate_limits_available && usage.rate_limits) {
-            saveUsageSnapshot(user.id, usage.rate_limits);
-          } else {
-            console.log(
-              "[chat:usage_EXPERIMENTAL not available]",
-              JSON.stringify({
-                rate_limits_available: usage.rate_limits_available,
-                subscription_type: usage.subscription_type,
-              })
-            );
-          }
-        } catch (e) {
-          console.error("[chat:usage_EXPERIMENTAL failed]", e);
         }
 
         db.prepare(

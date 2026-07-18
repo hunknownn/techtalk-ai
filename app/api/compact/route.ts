@@ -104,16 +104,17 @@ export async function POST(req: Request) {
               preTokens: pre_tokens,
               postTokens: post_tokens ?? null,
             });
+            // 컨트롤 메서드는 프로세스가 살아있는 동안(= 루프 안에서)만 호출 가능하다.
+            // result 메시지가 오면 SDK가 즉시 stdin을 닫으므로, 그 전인
+            // compact_boundary 시점에 바로 조회한다.
+            try {
+              const ctxUsage = await q.getContextUsage();
+              contextTokens = ctxUsage.totalTokens;
+              contextMaxTokens = ctxUsage.maxTokens;
+            } catch (e) {
+              console.error("[compact:getContextUsage failed]", e);
+            }
           }
-        }
-
-        // 압축 후 실제 컨텍스트 크기 — SDK 공식 계산(모델별 실제 한도 기준)
-        try {
-          const ctxUsage = await q.getContextUsage();
-          contextTokens = ctxUsage.totalTokens;
-          contextMaxTokens = ctxUsage.maxTokens;
-        } catch {
-          /* 조회 실패해도 압축 자체는 이미 끝난 상태 */
         }
 
         db.prepare(
