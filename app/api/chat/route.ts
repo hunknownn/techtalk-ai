@@ -160,23 +160,28 @@ export async function POST(req: NextRequest) {
             }
             // 컨트롤 메서드는 프로세스가 살아있는 동안(= 루프 안에서)만 호출 가능하다.
             // query()에 문자열 프롬프트를 주면 SDK가 "단일 턴"으로 보고 result
-            // 수신 즉시 stdin을 닫아버려서, 루프 종료 후에는 항상
-            // "ProcessTransport is not ready for writing"로 실패한다.
-            // assistant 메시지마다 최신값으로 덮어써서, 마지막 호출 결과가 최종값이 되게 한다.
-            try {
-              const ctxUsage = await q.getContextUsage();
-              contextTokens = ctxUsage.totalTokens;
-              contextMaxTokens = ctxUsage.maxTokens;
-            } catch (e) {
-              console.error("[chat:getContextUsage failed]", e);
+            // 수신 즉시 stdin을 닫아버린다. 이 assistant 메시지가 마지막 메시지라면
+            // 백그라운드에서 result가 거의 동시에 도착해 순차 호출 시 두 번째
+            // 호출이 "Query closed before response received"로 질 수 있으므로
+            // 동시에(Promise.allSettled) 호출해 경쟁 구간을 줄인다.
+            // assistant 메시지마다 최신값으로 덮어써서, 성공한 마지막 호출이 최종값이 되게 한다.
+            const [ctxResult, usageResult] = await Promise.allSettled([
+              q.getContextUsage(),
+              q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
+            ]);
+            if (ctxResult.status === "fulfilled") {
+              contextTokens = ctxResult.value.totalTokens;
+              contextMaxTokens = ctxResult.value.maxTokens;
+            } else {
+              console.error("[chat:getContextUsage failed]", ctxResult.reason);
             }
-            try {
-              const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
+            if (usageResult.status === "fulfilled") {
+              const usage = usageResult.value;
               if (usage.rate_limits_available && usage.rate_limits) {
                 saveUsageSnapshot(user.id, usage.rate_limits);
               }
-            } catch (e) {
-              console.error("[chat:usage_EXPERIMENTAL failed]", e);
+            } else {
+              console.error("[chat:usage_EXPERIMENTAL failed]", usageResult.reason);
             }
           } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
             // 자동 압축(컨텍스트 한도 근접 시 SDK가 알아서 요약)도 여기서 감지된다
