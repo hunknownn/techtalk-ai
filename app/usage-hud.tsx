@@ -12,8 +12,8 @@ interface UsageHud {
   sevenDay: UsageWindow | null;
 }
 
-// 표준 컨텍스트 윈도 200k 기준
-export const CONTEXT_LIMIT = 200_000;
+// SDK가 실제 한도를 안 준 경우(첫 턴 이전 등)의 표시용 기본값 — 모델별로 실제 한도는 다를 수 있다
+export const CONTEXT_LIMIT_FALLBACK = 200_000;
 
 function pctColor(p: number) {
   if (p >= 90) return "text-red-500";
@@ -34,9 +34,11 @@ function resetLabel(iso: string | null) {
 export function UsageHud({
   refreshKey,
   contextTokens,
+  contextMaxTokens,
 }: {
   refreshKey: number;
   contextTokens: number | null;
+  contextMaxTokens: number | null;
 }) {
   const [usage, setUsage] = useState<UsageHud | null>(null);
 
@@ -82,18 +84,21 @@ export function UsageHud({
           )}
         </>
       )}
-      {contextTokens !== null && (
-        <span
-          className={pctColor((contextTokens / CONTEXT_LIMIT) * 100)}
-          title={`현재 세션의 컨텍스트 크기 (마지막 턴 입력 토큰, 캐시 포함) — 한도 ${CONTEXT_LIMIT / 1000}k 기준`}
-        >
-          ctx{" "}
-          {contextTokens >= 1000
-            ? `${Math.round(contextTokens / 1000)}k`
-            : contextTokens}{" "}
-          ({Math.round((contextTokens / CONTEXT_LIMIT) * 100)}%)
-        </span>
-      )}
+      {contextTokens !== null && (() => {
+        const limit = contextMaxTokens ?? CONTEXT_LIMIT_FALLBACK;
+        return (
+          <span
+            className={pctColor((contextTokens / limit) * 100)}
+            title={`현재 세션의 컨텍스트 크기 (SDK 기준, 모델별 한도 ${Math.round(limit / 1000)}k)`}
+          >
+            ctx{" "}
+            {contextTokens >= 1000
+              ? `${Math.round(contextTokens / 1000)}k`
+              : contextTokens}{" "}
+            ({Math.round((contextTokens / limit) * 100)}%)
+          </span>
+        );
+      })()}
     </div>
   );
 }

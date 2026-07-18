@@ -88,6 +88,7 @@ export async function POST(req: Request) {
         });
 
         let contextTokens: number | null = null;
+        let contextMaxTokens: number | null = null;
         let compacted = false;
         let sdkSessionId = session.sdk_session_id;
 
@@ -97,7 +98,6 @@ export async function POST(req: Request) {
           } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
             compacted = true;
             const { trigger, pre_tokens, post_tokens } = msg.compact_metadata;
-            if (typeof post_tokens === "number") contextTokens = post_tokens;
             send({
               type: "compact",
               trigger,
@@ -107,10 +107,19 @@ export async function POST(req: Request) {
           }
         }
 
+        // 압축 후 실제 컨텍스트 크기 — SDK 공식 계산(모델별 실제 한도 기준)
+        try {
+          const ctxUsage = await q.getContextUsage();
+          contextTokens = ctxUsage.totalTokens;
+          contextMaxTokens = ctxUsage.maxTokens;
+        } catch {
+          /* 조회 실패해도 압축 자체는 이미 끝난 상태 */
+        }
+
         db.prepare(
-          "UPDATE sessions SET sdk_session_id = ?, context_tokens = COALESCE(?, context_tokens) WHERE id = ?"
-        ).run(sdkSessionId, contextTokens, session.id);
-        send({ type: "done", compacted, contextTokens });
+          "UPDATE sessions SET sdk_session_id = ?, context_tokens = COALESCE(?, context_tokens), context_max_tokens = COALESCE(?, context_max_tokens) WHERE id = ?"
+        ).run(sdkSessionId, contextTokens, contextMaxTokens, session.id);
+        send({ type: "done", compacted, contextTokens, contextMaxTokens });
       } catch (e) {
         send({
           type: "error",

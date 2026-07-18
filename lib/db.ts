@@ -68,6 +68,7 @@ function createDb() {
     "ALTER TABLE users ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE users ADD COLUMN rate_limits TEXT",
     "ALTER TABLE users ADD COLUMN default_model TEXT",
+    "ALTER TABLE sessions ADD COLUMN context_max_tokens INTEGER",
   ]) {
     try {
       db.exec(ddl);

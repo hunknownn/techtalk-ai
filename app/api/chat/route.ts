@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
       let assistantText = "";
       let sdkSessionId = session.sdk_session_id;
       let contextTokens: number | null = null;
+      let contextMaxTokens: number | null = null;
 
       try {
         const q = query({
@@ -157,19 +158,9 @@ export async function POST(req: NextRequest) {
                 send({ type: "tool", name: block.name });
               }
             }
-            // 현재 컨텍스트 크기 = 마지막 API 호출 1건의 입력 토큰(캐시 포함).
-            // result.usage는 턴 전체 누적이라 도구 호출 수만큼 부풀려진다.
-            const u = msg.message.usage;
-            if (u) {
-              contextTokens =
-                (u.input_tokens ?? 0) +
-                (u.cache_read_input_tokens ?? 0) +
-                (u.cache_creation_input_tokens ?? 0);
-            }
           } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
             // 자동 압축(컨텍스트 한도 근접 시 SDK가 알아서 요약)도 여기서 감지된다
             const { trigger, pre_tokens, post_tokens } = msg.compact_metadata;
-            if (typeof post_tokens === "number") contextTokens = post_tokens;
             send({
               type: "compact",
               trigger,
@@ -177,6 +168,17 @@ export async function POST(req: NextRequest) {
               postTokens: post_tokens ?? null,
             });
           }
+        }
+
+        // 컨텍스트 크기 — CLI 상태줄과 동일한 SDK 공식 계산(모델별 실제 한도 기준).
+        // 직접 usage 필드를 더해 200k로 나누던 예전 방식은 모델마다 다른 실제
+        // 컨텍스트 윈도를 반영 못 해 로컬 CLI와 표시가 어긋났다.
+        try {
+          const ctxUsage = await q.getContextUsage();
+          contextTokens = ctxUsage.totalTokens;
+          contextMaxTokens = ctxUsage.maxTokens;
+        } catch {
+          /* 조회 실패해도 채팅 자체는 정상 진행 */
         }
 
         // 구독 사용량(5h/주간) — CLI `/usage`와 동일한 데이터. 실험적 API라 실패해도 채팅엔 영향 없게 무시.
@@ -190,8 +192,8 @@ export async function POST(req: NextRequest) {
         }
 
         db.prepare(
-          "UPDATE sessions SET sdk_session_id = ?, context_tokens = COALESCE(?, context_tokens), model = COALESCE(?, model) WHERE id = ?"
-        ).run(sdkSessionId, contextTokens, model ?? null, session.id);
+          "UPDATE sessions SET sdk_session_id = ?, context_tokens = COALESCE(?, context_tokens), context_max_tokens = COALESCE(?, context_max_tokens), model = COALESCE(?, model) WHERE id = ?"
+        ).run(sdkSessionId, contextTokens, contextMaxTokens, model ?? null, session.id);
         if (assistantText) {
           db.prepare(
             "INSERT INTO messages (session_id, role, content) VALUES (?, 'assistant', ?)"
@@ -202,7 +204,13 @@ export async function POST(req: NextRequest) {
           outputDir: rt.outputDir,
           userId: user.id,
         });
-        send({ type: "done", sessionId: session.id, artifacts, contextTokens });
+        send({
+          type: "done",
+          sessionId: session.id,
+          artifacts,
+          contextTokens,
+          contextMaxTokens,
+        });
       } catch (e) {
         send({
           type: "error",

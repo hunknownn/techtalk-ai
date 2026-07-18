@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChatSidebar, type SessionSummary } from "./chat-sidebar";
 import { ConfirmDialog } from "./confirm-dialog";
 import { Markdown } from "./markdown";
-import { UsageHud, CONTEXT_LIMIT } from "./usage-hud";
+import { UsageHud, CONTEXT_LIMIT_FALLBACK } from "./usage-hud";
 
 const MODELS = [
   { key: "default", label: "기본 모델 (Opus)" },
@@ -53,6 +53,7 @@ export default function ChatPage() {
   const [related, setRelated] = useState<RelatedArtifact[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [contextTokens, setContextTokens] = useState<number | null>(null);
+  const [contextMaxTokens, setContextMaxTokens] = useState<number | null>(null);
   const [hudKey, setHudKey] = useState(0);
   const [compacting, setCompacting] = useState(false);
   const [compactNotice, setCompactNotice] = useState<{
@@ -96,6 +97,7 @@ export default function ChatPage() {
     setArtifacts(data.artifacts);
     setModel(data.session.model ?? "default");
     setContextTokens(data.session.context_tokens ?? null);
+    setContextMaxTokens(data.session.context_max_tokens ?? null);
     fetchRelated(data.session.topic ?? "");
     // 세션 주제가 트리 소주제와 정확히 일치하면 트리에서도 표시됨
     setSelectedTopic(data.session.topic ?? null);
@@ -283,6 +285,9 @@ export default function ChatPage() {
             if (typeof ev.contextTokens === "number") {
               setContextTokens(ev.contextTokens);
             }
+            if (typeof ev.contextMaxTokens === "number") {
+              setContextMaxTokens(ev.contextMaxTokens);
+            }
             setHudKey((k) => k + 1);
           } else if (ev.type === "error") {
             throw new Error(ev.message);
@@ -346,7 +351,10 @@ export default function ChatPage() {
               preTokens: ev.preTokens,
               postTokens: ev.postTokens ?? null,
             });
-            if (typeof ev.postTokens === "number") setContextTokens(ev.postTokens);
+          } else if (ev.type === "done") {
+            if (typeof ev.contextTokens === "number") setContextTokens(ev.contextTokens);
+            if (typeof ev.contextMaxTokens === "number")
+              setContextMaxTokens(ev.contextMaxTokens);
           } else if (ev.type === "error") {
             throw new Error(ev.message);
           }
@@ -366,6 +374,7 @@ export default function ChatPage() {
     setToolStatus(null);
     setSendError(null);
     setContextTokens(null);
+    setContextMaxTokens(null);
     setRelated([]);
     setSelectedTopic(null);
     setCompactNotice(null);
@@ -422,7 +431,11 @@ export default function ChatPage() {
           {desktopSidebarOpen ? "«" : "☰"}
         </button>
         <div className="ml-auto flex items-center gap-2">
-          <UsageHud refreshKey={hudKey} contextTokens={contextTokens} />
+          <UsageHud
+            refreshKey={hudKey}
+            contextTokens={contextTokens}
+            contextMaxTokens={contextMaxTokens}
+          />
           <select
             value={model}
             disabled={busy}
@@ -452,7 +465,8 @@ export default function ChatPage() {
               title="대화를 요약해 컨텍스트를 줄입니다 (CLI의 /compact와 동일)"
               className={
                 "rounded border px-2.5 py-1 text-sm disabled:opacity-40 " +
-                (contextTokens !== null && contextTokens / CONTEXT_LIMIT >= 0.7
+                (contextTokens !== null &&
+                contextTokens / (contextMaxTokens ?? CONTEXT_LIMIT_FALLBACK) >= 0.7
                   ? "border-amber-400 text-amber-500 hover:bg-amber-500/10"
                   : "border-neutral-300 text-neutral-600 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800")
               }
