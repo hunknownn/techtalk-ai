@@ -167,6 +167,8 @@ export async function POST(req: NextRequest) {
                 (u.cache_creation_input_tokens ?? 0);
             }
           } else if (msg.type === "rate_limit_event") {
+            // TODO(debug): 실제 페이로드 형태 확인용 임시 로그 — 확인 후 제거
+            console.log("[chat:rate_limit_info]", JSON.stringify(msg.rate_limit_info));
             // 구독 사용량(5h/주간) — HUD가 /api/usage로 읽어감
             saveRateLimitEvent(user.id, msg.rate_limit_info);
           } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
