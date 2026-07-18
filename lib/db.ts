@@ -67,6 +67,7 @@ function createDb() {
     "ALTER TABLE artifacts ADD COLUMN user_id INTEGER",
     "ALTER TABLE users ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE users ADD COLUMN rate_limits TEXT",
+    "ALTER TABLE users ADD COLUMN default_model TEXT",
   ]) {
     try {
       db.exec(ddl);

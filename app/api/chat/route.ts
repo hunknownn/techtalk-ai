@@ -134,8 +134,8 @@ export async function POST(req: NextRequest) {
               HOME: rt.home,
               CLAUDE_CODE_OAUTH_TOKEN: subscriptionToken,
             },
-            // 모델 선택 (미지정이면 Claude Code 기본값)
-            ...(model && model !== "default" ? { model } : {}),
+            // 모델 선택 ("기본 모델" = Opus 고정 — 딥다이브 품질 우선)
+            model: model && model !== "default" ? model : "opus",
           },
         });
 

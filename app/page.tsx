@@ -7,7 +7,7 @@ import { Markdown } from "./markdown";
 import { UsageHud } from "./usage-hud";
 
 const MODELS = [
-  { key: "default", label: "기본 모델" },
+  { key: "default", label: "기본 모델 (Opus)" },
   { key: "sonnet", label: "Sonnet" },
   { key: "opus", label: "Opus" },
   { key: "haiku", label: "Haiku" },
@@ -113,6 +113,15 @@ export default function ChatPage() {
   };
 
   useEffect(() => {
+    // 대시보드 등에서 진입: ?session=<id> 세션 열기, ?topic=<주제> 입력 프리필
+    // (아래 /api/me 콜백에서 "세션 복원 중이라 모델 선호값을 덮지 말지" 판단에 재사용)
+    const params = new URLSearchParams(window.location.search);
+    const sessionParam = params.get("session");
+    const topicParam = params.get("topic");
+    const restoringSession =
+      Boolean(sessionParam) ||
+      (!topicParam && Boolean(localStorage.getItem(LAST_SESSION_KEY)));
+
     // 로그인 게이트: 미로그인 → /login, 구독 미연결 → 배너 표시
     fetch("/api/me").then(async (r) => {
       if (r.status === 401) {
@@ -134,6 +143,8 @@ export default function ChatPage() {
         username: d.user.username,
         subscriptionBound: d.subscriptionBound,
       });
+      // 모델 선호값(계정에 저장된 값) 복원 — 세션 복원 중이면 그 세션 값이 우선
+      if (!restoringSession && d.defaultModel) setModel(d.defaultModel);
     });
     refreshSessions();
     // 추천 주제 칩: 주제 트리에서 아직 안 다룬 소주제 앞 4개
@@ -150,10 +161,6 @@ export default function ChatPage() {
         );
       })
       .catch(() => {});
-    // 대시보드 등에서 진입: ?session=<id> 세션 열기, ?topic=<주제> 입력 프리필
-    const params = new URLSearchParams(window.location.search);
-    const sessionParam = params.get("session");
-    const topicParam = params.get("topic");
     if (sessionParam || topicParam) {
       window.history.replaceState(null, "", "/");
     }
@@ -354,7 +361,16 @@ export default function ChatPage() {
           <select
             value={model}
             disabled={busy}
-            onChange={(e) => setModel(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setModel(next);
+              // 계정에 저장 — 기기·브라우저 바뀌어도, 캐시 지워도 유지됨
+              fetch("/api/me", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ defaultModel: next }),
+              }).catch(() => {});
+            }}
             title="사용 모델 (대화 중에도 변경 가능)"
             className="rounded border border-neutral-300 bg-transparent p-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
           >
