@@ -179,6 +179,15 @@ export async function POST(req: NextRequest) {
               const usage = usageResult.value;
               if (usage.rate_limits_available && usage.rate_limits) {
                 saveUsageSnapshot(user.id, usage.rate_limits);
+              } else {
+                console.log(
+                  "[chat:usage_EXPERIMENTAL not available]",
+                  JSON.stringify({
+                    rate_limits_available: usage.rate_limits_available,
+                    rate_limits: usage.rate_limits,
+                    subscription_type: usage.subscription_type,
+                  })
+                );
               }
             } else {
               console.error("[chat:usage_EXPERIMENTAL failed]", usageResult.reason);
