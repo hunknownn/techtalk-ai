@@ -177,8 +177,9 @@ export async function POST(req: NextRequest) {
           const ctxUsage = await q.getContextUsage();
           contextTokens = ctxUsage.totalTokens;
           contextMaxTokens = ctxUsage.maxTokens;
-        } catch {
-          /* 조회 실패해도 채팅 자체는 정상 진행 */
+        } catch (e) {
+          // 조회 실패해도 채팅 자체는 정상 진행 — 원인은 로그로 남긴다
+          console.error("[chat:getContextUsage failed]", e);
         }
 
         // 구독 사용량(5h/주간) — CLI `/usage`와 동일한 데이터. 실험적 API라 실패해도 채팅엔 영향 없게 무시.
@@ -186,9 +187,17 @@ export async function POST(req: NextRequest) {
           const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET();
           if (usage.rate_limits_available && usage.rate_limits) {
             saveUsageSnapshot(user.id, usage.rate_limits);
+          } else {
+            console.log(
+              "[chat:usage_EXPERIMENTAL not available]",
+              JSON.stringify({
+                rate_limits_available: usage.rate_limits_available,
+                subscription_type: usage.subscription_type,
+              })
+            );
           }
-        } catch {
-          /* 실험적 API — 조회 실패해도 채팅 자체는 정상 진행 */
+        } catch (e) {
+          console.error("[chat:usage_EXPERIMENTAL failed]", e);
         }
 
         db.prepare(
