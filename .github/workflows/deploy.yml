@@ -1,16 +1,13 @@
-# 앱 소스가 main에 푸시되면: 이미지 빌드·푸시 → deploy/ 태그 범프 커밋 → ArgoCD가 auto-sync
+# v*.*.* 태그를 푸시하면: 이미지 빌드·푸시 → deploy/ 태그 범프 커밋(main에) → ArgoCD가 auto-sync
+# main에 그냥 push하는 것만으로는 배포되지 않는다 — 릴리스 시점은 태그로 직접 정한다.
 name: build-and-deploy
 
 on:
   push:
-    branches: [main]
-    # bot의 태그 범프 커밋(deploy/만 변경)으로 다시 트리거되는 루프 방지
-    paths-ignore:
-      - "deploy/**"
-      - "argocd/**"
-      - "**.md"
+    tags:
+      - "v*.*.*"
 
-# 연속 푸시 시 순서 꼬임 방지: 한 번에 하나씩, 진행 중인 배포는 취소하지 않음
+# 연속 태그 푸시 시 순서 꼬임 방지: 한 번에 하나씩, 진행 중인 배포는 취소하지 않음
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -27,9 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve image tag (git short SHA)
+      - name: Resolve image tag (git tag)
         id: meta
-        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -49,11 +46,15 @@ jobs:
 
       - name: Bump image tag in deploy manifest
         run: |
+          # 태그 푸시는 해당 커밋을 detached HEAD로 체크아웃하므로,
+          # 매니페스트 갱신은 main 브랜치로 옮겨와서 커밋한다.
+          git fetch origin main
+          git checkout main
           sed -i -E "s|(image: ${IMAGE}:).*|\1${{ steps.meta.outputs.tag }}|" deploy/deployment.yaml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add deploy/deployment.yaml
           git commit -m "chore(deploy): techtalk-web:${{ steps.meta.outputs.tag }} 이미지로 갱신"
-          # 빌드 중 다른 커밋이 들어왔을 수 있으므로 rebase 후 푸시
+          # 태그 푸시 사이 main에 다른 변경이 들어왔을 수 있으므로 rebase 후 푸시
           git pull --rebase origin main
           git push origin main
