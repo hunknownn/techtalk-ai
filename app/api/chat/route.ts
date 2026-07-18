@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { ingestNewArtifacts } from "@/lib/ingest";
 import { getCurrentUser } from "@/lib/webauth";
 import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
+import { saveRateLimitEvent } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -156,16 +157,18 @@ export async function POST(req: NextRequest) {
                 send({ type: "tool", name: block.name });
               }
             }
-          } else if (msg.type === "result") {
-            // 현재 세션의 컨텍스트 크기 ≈ 마지막 턴 입력 토큰(캐시 포함)
-            const u = (msg as unknown as { usage?: Record<string, number> })
-              .usage;
+            // 현재 컨텍스트 크기 = 마지막 API 호출 1건의 입력 토큰(캐시 포함).
+            // result.usage는 턴 전체 누적이라 도구 호출 수만큼 부풀려진다.
+            const u = msg.message.usage;
             if (u) {
               contextTokens =
                 (u.input_tokens ?? 0) +
                 (u.cache_read_input_tokens ?? 0) +
                 (u.cache_creation_input_tokens ?? 0);
             }
+          } else if (msg.type === "rate_limit_event") {
+            // 구독 사용량(5h/주간) — HUD가 /api/usage로 읽어감
+            saveRateLimitEvent(user.id, msg.rate_limit_info);
           }
         }
 

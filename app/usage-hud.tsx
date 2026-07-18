@@ -58,7 +58,7 @@ export function UsageHud({
       {usage.stale ? (
         <span
           className="text-neutral-400"
-          title="토큰 갱신 대기 중 — 다음 대화가 돌면 자동 갱신됩니다"
+          title="사용량 정보 대기 중 — 대화가 한 번 돌면 채워집니다"
         >
           사용량 −
         </span>
