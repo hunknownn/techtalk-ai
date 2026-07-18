@@ -29,7 +29,7 @@ spec:
         fsGroup: 1001
       containers:
         - name: web
-          image: nuhgnod/techtalk-web:v0.1.3
+          image: nuhgnod/techtalk-web:v0.1.4
           ports:
             - containerPort: 3000
           env:
