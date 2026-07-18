@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChatSidebar, type SessionSummary } from "./chat-sidebar";
 import { ConfirmDialog } from "./confirm-dialog";
 import { Markdown } from "./markdown";
-import { UsageHud } from "./usage-hud";
+import { UsageHud, CONTEXT_LIMIT } from "./usage-hud";
 
 const MODELS = [
   { key: "default", label: "기본 모델 (Opus)" },
@@ -54,6 +54,13 @@ export default function ChatPage() {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [contextTokens, setContextTokens] = useState<number | null>(null);
   const [hudKey, setHudKey] = useState(0);
+  const [compacting, setCompacting] = useState(false);
+  const [compactNotice, setCompactNotice] = useState<{
+    trigger: "manual" | "auto";
+    preTokens: number;
+    postTokens: number | null;
+  } | null>(null);
+  const [compactError, setCompactError] = useState<string | null>(null);
   const [me, setMe] = useState<{
     username: string;
     subscriptionBound: boolean;
@@ -93,6 +100,8 @@ export default function ChatPage() {
     // 세션 주제가 트리 소주제와 정확히 일치하면 트리에서도 표시됨
     setSelectedTopic(data.session.topic ?? null);
     setSendError(null);
+    setCompactNotice(null);
+    setCompactError(null);
     localStorage.setItem(LAST_SESSION_KEY, String(data.session.id));
     stickToBottomRef.current = true;
     scrollToBottom(true);
@@ -257,6 +266,13 @@ export default function ChatPage() {
             scrollToBottom();
           } else if (ev.type === "tool") {
             setToolStatus(`도구 실행 중: ${ev.name}`);
+          } else if (ev.type === "compact") {
+            // 자동 압축 — SDK가 대화 중 알아서 요약한 경우도 여기서 감지됨
+            setCompactNotice({
+              trigger: ev.trigger,
+              preTokens: ev.preTokens,
+              postTokens: ev.postTokens ?? null,
+            });
           } else if (ev.type === "done") {
             if (sessionId === null) fetchRelated(message);
             setSessionId(ev.sessionId);
@@ -296,6 +312,53 @@ export default function ChatPage() {
     }
   }
 
+  // 수동 압축: CLI의 /compact와 동일 — 대화창엔 흔적을 남기지 않고
+  // 컨텍스트만 요약해 다음 턴부터 가볍게 만든다.
+  async function runCompact() {
+    if (!sessionId || busy || compacting) return;
+    setCompacting(true);
+    setCompactError(null);
+    try {
+      const res = await fetch("/api/compact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!res.ok || !res.body) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.message ?? `요청 실패 (${res.status})`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const raw of events) {
+          if (!raw.startsWith("data: ")) continue;
+          const ev = JSON.parse(raw.slice(6));
+          if (ev.type === "compact") {
+            setCompactNotice({
+              trigger: ev.trigger,
+              preTokens: ev.preTokens,
+              postTokens: ev.postTokens ?? null,
+            });
+            if (typeof ev.postTokens === "number") setContextTokens(ev.postTokens);
+          } else if (ev.type === "error") {
+            throw new Error(ev.message);
+          }
+        }
+      }
+    } catch (e) {
+      setCompactError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCompacting(false);
+    }
+  }
+
   function reset() {
     setSessionId(null);
     setMessages([]);
@@ -305,6 +368,8 @@ export default function ChatPage() {
     setContextTokens(null);
     setRelated([]);
     setSelectedTopic(null);
+    setCompactNotice(null);
+    setCompactError(null);
     localStorage.removeItem(LAST_SESSION_KEY);
   }
 
@@ -380,6 +445,21 @@ export default function ChatPage() {
               </option>
             ))}
           </select>
+          {sessionId !== null && (
+            <button
+              onClick={runCompact}
+              disabled={busy || compacting}
+              title="대화를 요약해 컨텍스트를 줄입니다 (CLI의 /compact와 동일)"
+              className={
+                "rounded border px-2.5 py-1 text-sm disabled:opacity-40 " +
+                (contextTokens !== null && contextTokens / CONTEXT_LIMIT >= 0.7
+                  ? "border-amber-400 text-amber-500 hover:bg-amber-500/10"
+                  : "border-neutral-300 text-neutral-600 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800")
+              }
+            >
+              {compacting ? "압축 중…" : "압축"}
+            </button>
+          )}
           <button
             onClick={() =>
               messages.length > 0
@@ -539,6 +619,36 @@ export default function ChatPage() {
                 {a.kind === "html" ? "🌐" : "📝"} {a.title}
               </a>
             ))}
+          </div>
+        )}
+        {compactNotice && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-400/40 bg-blue-500/5 p-3 text-sm">
+            <span>
+              {compactNotice.trigger === "auto" ? "자동 압축됨: " : "압축 완료: "}
+              {Math.round(compactNotice.preTokens / 1000)}k
+              {compactNotice.postTokens !== null
+                ? ` → ${Math.round(compactNotice.postTokens / 1000)}k`
+                : ""}
+            </span>
+            <button
+              onClick={() => setCompactNotice(null)}
+              className="shrink-0 text-xs text-neutral-500 hover:underline"
+            >
+              닫기
+            </button>
+          </div>
+        )}
+        {compactError && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
+            <span className="min-w-0 truncate" title={compactError}>
+              압축 실패: {compactError}
+            </span>
+            <button
+              onClick={runCompact}
+              className="shrink-0 rounded border border-red-400 px-2.5 py-1 text-xs text-red-500 hover:bg-red-500/10"
+            >
+              재시도
+            </button>
           </div>
         )}
         {sendError && (

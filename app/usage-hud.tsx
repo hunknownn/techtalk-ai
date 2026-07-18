@@ -13,7 +13,7 @@ interface UsageHud {
 }
 
 // 표준 컨텍스트 윈도 200k 기준
-const CONTEXT_LIMIT = 200_000;
+export const CONTEXT_LIMIT = 200_000;
 
 function pctColor(p: number) {
   if (p >= 90) return "text-red-500";

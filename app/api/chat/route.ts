@@ -169,6 +169,16 @@ export async function POST(req: NextRequest) {
           } else if (msg.type === "rate_limit_event") {
             // 구독 사용량(5h/주간) — HUD가 /api/usage로 읽어감
             saveRateLimitEvent(user.id, msg.rate_limit_info);
+          } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
+            // 자동 압축(컨텍스트 한도 근접 시 SDK가 알아서 요약)도 여기서 감지된다
+            const { trigger, pre_tokens, post_tokens } = msg.compact_metadata;
+            if (typeof post_tokens === "number") contextTokens = post_tokens;
+            send({
+              type: "compact",
+              trigger,
+              preTokens: pre_tokens,
+              postTokens: post_tokens ?? null,
+            });
           }
         }
 
