@@ -27,6 +27,18 @@ function resetLabel(iso: string | null) {
   return ` (리셋 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")})`;
 }
 
+/** HUD엔 절대 시각 대신 남은 시간을 쓴다 (정확한 시각은 툴팁에 있다) */
+function untilLabel(iso: string | null) {
+  if (!iso) return "";
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "곧 리셋";
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `${min}분 뒤`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}시간 뒤`;
+  return `${Math.round(hr / 24)}일 뒤`;
+}
+
 /**
  * 계정 사용량 HUD: 5시간 세션 / 주간 사용률 + 현재 세션 컨텍스트 크기.
  * refreshKey가 바뀔 때(대화 턴 종료)마다 갱신한다.
@@ -53,6 +65,14 @@ export function UsageHud({
     refresh();
   }, [refresh, refreshKey]);
 
+  // 남은 시간은 렌더 시점에 계산되므로, 대화가 없어도 1분마다 다시 그린다
+  // (사용량 값 자체는 턴 종료 때만 갱신 — 여기선 API를 호출하지 않는다)
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((v) => v + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   if (!usage) return null;
 
   return (
@@ -72,6 +92,9 @@ export function UsageHud({
               title={`5시간 세션 사용률${resetLabel(usage.fiveHour.resetsAt)}`}
             >
               5h {Math.round(usage.fiveHour.utilization)}%
+              <span className="ml-1 text-neutral-400">
+                {untilLabel(usage.fiveHour.resetsAt)}
+              </span>
             </span>
           )}
           {usage.sevenDay && (
@@ -80,6 +103,9 @@ export function UsageHud({
               title={`주간 사용률${resetLabel(usage.sevenDay.resetsAt)}`}
             >
               주간 {Math.round(usage.sevenDay.utilization)}%
+              <span className="ml-1 text-neutral-400">
+                {untilLabel(usage.sevenDay.resetsAt)}
+              </span>
             </span>
           )}
         </>
