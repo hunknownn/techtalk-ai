@@ -140,12 +140,6 @@ export async function POST(req: NextRequest) {
         });
 
         for await (const msg of q) {
-          // TODO(debug): rate_limit_event 수신 여부 진단용 임시 로그 — 확인 후 제거
-          console.log(
-            "[chat:msg]",
-            msg.type,
-            (msg as { subtype?: string }).subtype ?? ""
-          );
           if (msg.type === "system" && msg.subtype === "init") {
             sdkSessionId = msg.session_id;
           } else if (msg.type === "stream_event") {

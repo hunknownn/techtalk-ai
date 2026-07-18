@@ -46,14 +46,25 @@ function toIso(epoch?: number): string | null {
   return new Date(epoch < 1e12 ? epoch * 1000 : epoch).toISOString();
 }
 
+/**
+ * SDK의 rateLimitType은 five_hour/seven_day 외에 모델별 세분 값
+ * (seven_day_opus, seven_day_sonnet, seven_day_overage_included)도 온다.
+ * HUD는 5h/주간 두 창만 보여주므로 seven_day* 계열은 전부 seven_day로 합친다.
+ */
+function normalizeWindow(t?: string): "five_hour" | "seven_day" | null {
+  if (t === "five_hour") return "five_hour";
+  if (t?.startsWith("seven_day")) return "seven_day";
+  return null;
+}
+
 /** 대화 스트림의 rate_limit_event를 저장 — HUD가 쓰는 five_hour/seven_day 창만 */
 export function saveRateLimitEvent(userId: number, info: RateLimitInfoLike) {
-  if (info.rateLimitType !== "five_hour" && info.rateLimitType !== "seven_day")
-    return;
+  const window = normalizeWindow(info.rateLimitType);
+  if (!window) return;
   if (typeof info.utilization !== "number") return;
 
   const stored = readStored(userId);
-  stored[info.rateLimitType] = {
+  stored[window] = {
     utilization: info.utilization,
     resetsAt: toIso(info.resetsAt),
   };
