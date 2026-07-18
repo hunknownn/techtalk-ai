@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/webauth";
-import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
+import { ensureUserRuntime, hasSubscription } from "@/lib/userenv";
 import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -17,7 +17,7 @@ export async function GET() {
     .get(user.id) as { onboarded: number; default_model: string | null } | undefined;
   return Response.json({
     user: { id: user.id, username: user.username },
-    subscriptionBound: readUserToken(rt) !== null,
+    subscriptionBound: hasSubscription(rt),
     onboarded: (row?.onboarded ?? 0) === 1,
     defaultModel: row?.default_model ?? "default",
   });

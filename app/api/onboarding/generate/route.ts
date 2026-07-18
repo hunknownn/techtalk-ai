@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/webauth";
-import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
+import { ensureUserRuntime, hasSubscription } from "@/lib/userenv";
 import { runAgentText, extractJson } from "@/lib/agent";
 import { writeTaxonomy, type GenMajor } from "@/lib/taxonomyGen";
 import { majorTopicPrompt } from "@/lib/taxonomyPrompt";
@@ -25,8 +25,9 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const rt = ensureUserRuntime(user);
-  const token = readUserToken(rt);
-  if (!token) return Response.json({ error: "no_subscription" }, { status: 403 });
+  if (!hasSubscription(rt)) {
+    return Response.json({ error: "no_subscription" }, { status: 403 });
+  }
 
   const { areas } = (await req.json()) as { areas: AreaSpec[] };
   const valid = (areas ?? []).filter((a) => a.name && a.levels?.length);
@@ -65,7 +66,6 @@ export async function POST(req: Request) {
               const text = await runAgentText({
                 prompt: majorTopicPrompt(a.name, a.levels),
                 rt,
-                token,
               });
               const parsed = extractJson<GenMajor>(text);
               if (parsed?.mids?.length) {

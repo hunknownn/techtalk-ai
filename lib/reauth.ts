@@ -1,11 +1,20 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  buildAuthorizeUrl,
+  createPkce,
+  exchangeCode,
+  fetchProfile,
+  writeCredentials,
+} from "./oauth";
 
 /**
- * 파일 기반 구독 재인증. 실제 pty 프로세스는 detached 드라이버
- * (reauth-driver.cjs)가 돌리고, 여기서는 상태 파일만 읽고/쓴다.
- * → Next.js 요청 인스턴스가 갈려도 일관되게 동작 (메모리 세션 문제 해소).
+ * 구독 연결(OAuth) 진행 상태.
+ *
+ * 예전엔 pty로 `claude setup-token`을 몰아야 해서 detached 드라이버 프로세스와
+ * 파일 IPC가 필요했다. 이제 OAuth를 직접 수행하므로 별도 프로세스가 없다.
+ * 다만 인증 URL 생성(요청 A)과 코드 제출(요청 B)이 서로 다른 Next.js 인스턴스일
+ * 수 있어, PKCE verifier는 여전히 파일(PVC)로 주고받는다.
  */
 
 type Phase =
@@ -37,30 +46,34 @@ function readFileSafe(p: string): string | null {
   }
 }
 
-export function startReauth(userId: number, tokenFile: string): void {
+function setPhase(userId: number, phase: Phase, message?: string): void {
+  fs.writeFileSync(
+    path.join(workdir(userId), "phase.txt"),
+    JSON.stringify({ phase, message: message ?? null })
+  );
+}
+
+/** 인증 URL 생성. PKCE verifier를 저장해두고 코드 제출 때 다시 쓴다. */
+export function startReauth(userId: number): void {
   const wd = workdir(userId);
   fs.mkdirSync(wd, { recursive: true });
   // 이전 흔적 정리 후 시작
-  for (const f of ["url.txt", "code.txt", "phase.txt"]) {
+  for (const f of ["url.txt", "pkce.json", "phase.txt"]) {
     try {
       fs.unlinkSync(path.join(wd, f));
     } catch {
       /* 없으면 무시 */
     }
   }
-  fs.writeFileSync(
-    path.join(wd, "phase.txt"),
-    JSON.stringify({ phase: "starting", message: null })
-  );
 
-  const driver = path.join(process.cwd(), "reauth-driver.cjs");
-  const child = spawn(process.execPath, [driver, wd, tokenFile], {
-    cwd: process.cwd(),
-    env: process.env,
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
+  const { verifier, challenge, state } = createPkce();
+  fs.writeFileSync(
+    path.join(wd, "pkce.json"),
+    JSON.stringify({ verifier, state }),
+    { mode: 0o600 }
+  );
+  fs.writeFileSync(path.join(wd, "url.txt"), buildAuthorizeUrl(challenge, state));
+  setPhase(userId, "waiting_code");
 }
 
 export function readReauthState(userId: number): ReauthState {
@@ -81,10 +94,38 @@ export function readReauthState(userId: number): ReauthState {
   return { phase, url: phase === "waiting_code" ? url : null, message };
 }
 
-export function submitReauthCode(userId: number, code: string): void {
+/** 사용자가 붙여넣은 코드를 토큰으로 교환하고 자격증명 파일에 기록한다. */
+export async function submitReauthCode(
+  userId: number,
+  code: string,
+  home: string
+): Promise<void> {
   const state = readReauthState(userId);
   if (state.phase !== "waiting_code") {
     throw new Error("코드를 받을 단계가 아닙니다. 연결을 먼저 시작하세요.");
   }
-  fs.writeFileSync(path.join(workdir(userId), "code.txt"), code.trim());
+  const pkceRaw = readFileSafe(path.join(workdir(userId), "pkce.json"));
+  if (!pkceRaw) {
+    setPhase(userId, "error", "인증 정보가 만료됐습니다. 다시 시작하세요.");
+    throw new Error("인증 정보가 만료됐습니다. 다시 시작하세요.");
+  }
+  const pkce = JSON.parse(pkceRaw) as { verifier: string; state: string };
+
+  setPhase(userId, "exchanging");
+  try {
+    const tok = await exchangeCode(code, pkce.verifier, pkce.state);
+    const profile = await fetchProfile(tok.access_token);
+    writeCredentials(home, tok, profile);
+    // verifier는 1회용 — 교환 후 즉시 폐기
+    try {
+      fs.unlinkSync(path.join(workdir(userId), "pkce.json"));
+    } catch {
+      /* 이미 없음 */
+    }
+    setPhase(userId, "done", "구독 연결 완료");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    setPhase(userId, "error", msg);
+    throw e;
+  }
 }

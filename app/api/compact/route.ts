@@ -1,7 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/webauth";
-import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
+import { ensureUserRuntime, agentEnv, hasSubscription } from "@/lib/userenv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,8 +28,7 @@ export async function POST(req: Request) {
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const rt = ensureUserRuntime(user);
-  const subscriptionToken = readUserToken(rt);
-  if (!subscriptionToken) {
+  if (!hasSubscription(rt)) {
     return Response.json(
       { error: "no_subscription", message: "구독 연결이 필요합니다 (/auth)" },
       { status: 403 }
@@ -78,11 +77,7 @@ export async function POST(req: Request) {
             ...(process.env.CLAUDE_CODE_PATH
               ? { pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_PATH }
               : {}),
-            env: {
-              ...(process.env as Record<string, string>),
-              HOME: rt.home,
-              CLAUDE_CODE_OAUTH_TOKEN: subscriptionToken,
-            },
+            env: agentEnv(rt),
             model: session.model && session.model !== "default" ? session.model : "opus",
           },
         });

@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/webauth";
-import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
+import { ensureUserRuntime, hasSubscription } from "@/lib/userenv";
 import { runAgentText, extractJson } from "@/lib/agent";
 
 export const runtime = "nodejs";
@@ -17,8 +17,9 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   const rt = ensureUserRuntime(user);
-  const token = readUserToken(rt);
-  if (!token) return Response.json({ error: "no_subscription" }, { status: 403 });
+  if (!hasSubscription(rt)) {
+    return Response.json({ error: "no_subscription" }, { status: 403 });
+  }
 
   const { interests } = (await req.json()) as { interests: string[] };
   if (!interests?.length) {
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
 입력에서 정규화된 것은 source:"user", 네 추천은 source:"recommended"에 reason 포함.`;
 
   try {
-    const text = await runAgentText({ prompt, rt, token });
+    const text = await runAgentText({ prompt, rt });
     const data = extractJson<{ areas: Area[] }>(text);
     return Response.json({ areas: data.areas ?? [] });
   } catch (e) {

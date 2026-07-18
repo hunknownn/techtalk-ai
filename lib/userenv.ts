@@ -1,21 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { WebUser } from "./webauth";
+import { credentialsPath, readCredentialsMeta } from "./oauth";
 
 /**
  * 사용자별 실행 환경 격리.
  * - home: Claude Code가 쓸 $HOME (스킬·taxonomy·SDK 세션이 여기 삶)
  * - outputDir: 스킬 산출물 폴더 (~/techtalk 상당)
- * - tokenFile: 본인 구독 장기 토큰 저장 위치 (/data = PVC, 재시작에도 유지)
+ * - configDir: CLI 설정·자격증명 디렉토리 ($HOME/.claude)
+ *
+ * 구독 토큰은 configDir 안의 .credentials.json에 있고, CLI가 만료 시 직접
+ * 갱신하며 되쓴다. $HOME이 PVC라 갱신 결과도 재시작 후까지 유지된다.
  */
-
-const DATA_DIR =
-  process.env.TECHTALK_DATA_DIR ?? path.join(process.cwd(), "data");
 
 export interface UserRuntime {
   home: string;
   outputDir: string;
-  tokenFile: string;
+  configDir: string;
 }
 
 function skillsSource(): string | null {
@@ -57,19 +58,38 @@ export function ensureUserRuntime(user: WebUser): UserRuntime {
     );
   }
 
-  return {
-    home,
-    outputDir,
-    tokenFile: path.join(DATA_DIR, `oauth-user-${user.id}.json`),
-  };
+  return { home, outputDir, configDir: path.join(home, ".claude") };
 }
 
-/** 본인 구독 장기 토큰 읽기 — 없으면 null (폴백 없음: 대화 불가 처리) */
-export function readUserToken(rt: UserRuntime): string | null {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(rt.tokenFile, "utf-8"));
-    return typeof parsed.token === "string" ? parsed.token : null;
-  } catch {
-    return null;
-  }
+/**
+ * SDK 서브프로세스에 넘길 환경변수.
+ *
+ * CLAUDE_CODE_OAUTH_TOKEN은 절대 넣지 않는다 — 그 변수가 있으면 CLI가 토큰의
+ * 실제 스코프를 무시하고 subscriptionType을 null로 하드코딩해, 사용량 조회가
+ * 영구히 막힌다. 자격증명은 configDir의 .credentials.json으로만 전달한다.
+ */
+export function agentEnv(rt: UserRuntime): Record<string, string> {
+  const env: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+    HOME: rt.home,
+    CLAUDE_CONFIG_DIR: rt.configDir,
+  };
+  // 상속받은 환경에 남아 있더라도 확실히 제거 (있으면 사용량 조회가 죽는다)
+  delete env.CLAUDE_CODE_OAUTH_TOKEN;
+  return env;
+}
+
+/** 구독 연결 여부 — 미연결이면 대화 불가 (폴백 없음) */
+export function hasSubscription(rt: UserRuntime): boolean {
+  return readCredentialsMeta(rt.home) !== null;
+}
+
+/** 연결 상태 상세 (요금제·마지막 갱신 시각) */
+export function subscriptionInfo(rt: UserRuntime) {
+  return readCredentialsMeta(rt.home);
+}
+
+/** 자격증명 파일 경로 (진단·정리용) */
+export function userCredentialsPath(rt: UserRuntime): string {
+  return credentialsPath(rt.home);
 }

@@ -3,7 +3,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { db } from "@/lib/db";
 import { ingestNewArtifacts } from "@/lib/ingest";
 import { getCurrentUser } from "@/lib/webauth";
-import { ensureUserRuntime, readUserToken } from "@/lib/userenv";
+import { ensureUserRuntime, agentEnv, hasSubscription } from "@/lib/userenv";
 import { saveUsageSnapshot } from "@/lib/usage";
 
 export const runtime = "nodejs";
@@ -39,10 +39,9 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
 
-  // 모델 권한 확인 — 본인 구독 토큰 필수, 폴백 없음
+  // 모델 권한 확인 — 본인 구독 연결 필수, 폴백 없음
   const rt = ensureUserRuntime(user);
-  const subscriptionToken = readUserToken(rt);
-  if (!subscriptionToken) {
+  if (!hasSubscription(rt)) {
     return Response.json(
       { error: "no_subscription", message: "구독 연결이 필요합니다 (/auth)" },
       { status: 403 }
@@ -129,12 +128,8 @@ export async function POST(req: NextRequest) {
             ...(process.env.CLAUDE_CODE_PATH
               ? { pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_PATH }
               : {}),
-            // 사용자 격리의 핵심: 홈 디렉토리 + 본인 구독 토큰 주입 (폴백 없음)
-            env: {
-              ...(process.env as Record<string, string>),
-              HOME: rt.home,
-              CLAUDE_CODE_OAUTH_TOKEN: subscriptionToken,
-            },
+            // 사용자 격리의 핵심: 홈·설정 디렉토리 분리 (자격증명도 그 안에 있다)
+            env: agentEnv(rt),
             // 모델 선택 ("기본 모델" = Opus 고정 — 딥다이브 품질 우선)
             model: model && model !== "default" ? model : "opus",
           },

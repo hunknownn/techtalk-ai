@@ -1,17 +1,16 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { UserRuntime } from "./userenv";
+import { agentEnv, type UserRuntime } from "./userenv";
 
 /**
  * 유틸리티용 1회성 에이전트 호출 (스트리밍·스킬 없이 텍스트만).
- * 채팅과 동일한 사용자 격리(HOME·본인 구독 토큰)를 쓴다.
+ * 채팅과 동일한 사용자 격리(HOME·설정 디렉토리)를 쓴다.
  */
 export async function runAgentText(opts: {
   prompt: string;
   rt: UserRuntime;
-  token: string;
   model?: string;
 }): Promise<string> {
-  const { prompt, rt, token, model } = opts;
+  const { prompt, rt, model } = opts;
   const q = query({
     prompt,
     options: {
@@ -23,11 +22,7 @@ export async function runAgentText(opts: {
       ...(process.env.CLAUDE_CODE_PATH
         ? { pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_PATH }
         : {}),
-      env: {
-        ...(process.env as Record<string, string>),
-        HOME: rt.home,
-        CLAUDE_CODE_OAUTH_TOKEN: token,
-      },
+      env: agentEnv(rt),
       ...(model && model !== "default" ? { model } : {}),
     },
   });

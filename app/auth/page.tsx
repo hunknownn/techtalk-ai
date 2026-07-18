@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 
 interface AuthStatus {
   username: string;
-  token: { exists: boolean; createdAt: string | null };
+  token: {
+    exists: boolean;
+    updatedAt: string | null;
+    subscriptionType: string | null;
+  };
   reauth: {
     phase: "idle" | "starting" | "waiting_code" | "exchanging" | "done" | "error";
     url: string | null;
@@ -69,11 +73,14 @@ export default function AuthPage() {
             {status.token.exists ? (
               <p className="text-emerald-500">
                 연결됨
-                {status.token.createdAt && (
+                {status.token.subscriptionType && (
+                  <span className="uppercase"> · {status.token.subscriptionType}</span>
+                )}
+                {status.token.updatedAt && (
                   <span className="text-neutral-500">
                     {" "}
-                    · {new Date(status.token.createdAt).toLocaleString()} 발급
-                    (만료 전까지 유지)
+                    · {new Date(status.token.updatedAt).toLocaleString()} 갱신
+                    (만료 시 자동 갱신)
                   </span>
                 )}
               </p>

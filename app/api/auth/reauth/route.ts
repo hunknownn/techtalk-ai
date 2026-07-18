@@ -19,12 +19,12 @@ export async function POST(req: Request) {
 
   try {
     if (action === "start") {
-      startReauth(user.id, rt.tokenFile);
+      startReauth(user.id);
     } else if (action === "code") {
       if (!code?.trim()) {
         return Response.json({ error: "code is required" }, { status: 400 });
       }
-      submitReauthCode(user.id, code);
+      await submitReauthCode(user.id, code, rt.home);
     } else {
       return Response.json({ error: "unknown action" }, { status: 400 });
     }
