@@ -118,6 +118,13 @@ export async function POST(req: NextRequest) {
           options: {
             cwd: rt.outputDir,
             ...(sdkSessionId ? { resume: sdkSessionId } : {}),
+            // ★ CLI와 동일한 "대화형" 동작을 위해 Claude Code 기본 시스템 프롬프트를
+            // 명시적으로 켠다. 미지정 시 SDK는 이 프롬프트를 넣지 않아, 모델이
+            // "작업 완수형"으로 굴러 소크라테스/실무 문답에서 사용자 답까지 혼자
+            // 지어내며 여러 계단을 자동 진행하는 문제가 생긴다(로컬 CLI에선 이 프롬프트가
+            // 항상 포함돼 멀쩡했음). preset을 켜면 "질문하고 사용자에게 넘긴다"는
+            // 대화형 규범이 복원된다.
+            systemPrompt: { type: "preset", preset: "claude_code" },
             // 신뢰된 개인 사용자 공간: 스킬의 파일쓰기(산출물)를 막지 않는다
             permissionMode: "bypassPermissions",
             // 사용자 홈의 ~/.claude/skills 에서 techtalk 스킬 로드
