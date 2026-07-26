@@ -1,10 +1,15 @@
 import { NextRequest } from "next/server";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query,
+  forkSession,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import { db } from "@/lib/db";
 import { ingestNewArtifacts } from "@/lib/ingest";
 import { getCurrentUser } from "@/lib/webauth";
 import { ensureUserRuntime, agentEnv, hasSubscription } from "@/lib/userenv";
 import { saveUsageSnapshot } from "@/lib/usage";
+import { createTurnGuard } from "@/lib/turnGuard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -108,13 +113,39 @@ export async function POST(req: NextRequest) {
       }, 15000);
 
       let assistantText = "";
+      // 모델이 가짜 user/system 턴을 이어쓰는지 감시한다(lib/turnGuard.ts).
+      // 잘라내는 범위는 화면과 messages 테이블까지다 — 모델이 보는 히스토리는
+      // SDK가 쓰는 jsonl이라 여기선 못 막는다. 그쪽은 아래 세션 포크가 끊는다.
+      const turnGuard = createTurnGuard();
       let sdkSessionId = session.sdk_session_id;
+      // 이번 턴 사용자 메시지의 uuid — 오염 감지 시 여기까지만 남기고 포크한다
+      let userMessageUuid: string | null = null;
       let contextTokens: number | null = null;
       let contextMaxTokens: number | null = null;
 
+      // ★ 문자열 프롬프트를 주면 SDK가 "단일 턴 one-shot"으로 처리한다. 로컬 CLI는
+      // 지속 대화 세션(AsyncIterable)으로 도는데, 이 차이가 모델을 "작업 완수형"으로
+      // 몰아 소크라테스 문답에서 사용자 답까지 혼자 이어쓰게 만든다. 같은 스킬을
+      // 로컬 CLI에서 쓸 땐 멀쩡한데 웹에서만 터진 원인이 이 지점이다.
+      // → CLI와 동일한 스트리밍 입력 모드로 맞추고, 턴이 끝나면 명시적으로 닫는다.
+      let closeInput!: () => void;
+      const inputClosed = new Promise<void>((resolve) => {
+        closeInput = resolve;
+      });
+      async function* promptStream(): AsyncGenerator<SDKUserMessage> {
+        yield {
+          type: "user",
+          parent_tool_use_id: null,
+          message: { role: "user", content: prompt },
+        };
+        // result를 받을 때까지 입력을 열어둔다. 프로세스가 살아있어야
+        // 컨트롤 메서드(getContextUsage 등)를 안전하게 부를 수 있다.
+        await inputClosed;
+      }
+
       try {
         const q = query({
-          prompt,
+          prompt: promptStream(),
           options: {
             cwd: rt.outputDir,
             ...(sdkSessionId ? { resume: sdkSessionId } : {}),
@@ -145,14 +176,23 @@ export async function POST(req: NextRequest) {
         for await (const msg of q) {
           if (msg.type === "system" && msg.subtype === "init") {
             sdkSessionId = msg.session_id;
+          } else if (msg.type === "user") {
+            // CLI가 우리 입력을 uuid와 함께 되돌려준다. 첫 것이 이번 턴의 사용자 메시지다
+            if (!userMessageUuid && msg.uuid) userMessageUuid = msg.uuid;
+          } else if (msg.type === "result") {
+            // 이 요청은 한 턴만 담당한다 — 입력을 닫아 프로세스를 정리한다
+            closeInput();
           } else if (msg.type === "stream_event") {
             const ev = msg.event;
             if (
               ev.type === "content_block_delta" &&
               ev.delta.type === "text_delta"
             ) {
-              assistantText += ev.delta.text;
-              send({ type: "text", text: ev.delta.text });
+              const safe = turnGuard.push(ev.delta.text);
+              if (safe) {
+                assistantText += safe;
+                send({ type: "text", text: safe });
+              }
             }
           } else if (msg.type === "assistant") {
             for (const block of msg.message.content) {
@@ -161,11 +201,9 @@ export async function POST(req: NextRequest) {
               }
             }
             // 컨트롤 메서드는 프로세스가 살아있는 동안(= 루프 안에서)만 호출 가능하다.
-            // query()에 문자열 프롬프트를 주면 SDK가 "단일 턴"으로 보고 result
-            // 수신 즉시 stdin을 닫아버린다. 이 assistant 메시지가 마지막 메시지라면
-            // 백그라운드에서 result가 거의 동시에 도착해 순차 호출 시 두 번째
-            // 호출이 "Query closed before response received"로 질 수 있으므로
-            // 동시에(Promise.allSettled) 호출해 경쟁 구간을 줄인다.
+            // 스트리밍 입력으로 바꾼 뒤로는 result를 받을 때까지 입력이 열려 있어
+            // 예전처럼 stdin이 먼저 닫히는 레이스는 사라졌다. 그래도 두 호출은
+            // 서로 독립이므로 동시에(Promise.allSettled) 부른다.
             // assistant 메시지마다 최신값으로 덮어써서, 성공한 마지막 호출이 최종값이 되게 한다.
             const [ctxResult, usageResult] = await Promise.allSettled([
               q.getContextUsage(),
@@ -206,6 +244,35 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // 마지막 줄은 개행이 없어 보류돼 있을 수 있다 — 회수해서 흘린다
+        const tail = turnGuard.flush();
+        if (tail) {
+          assistantText += tail;
+          send({ type: "text", text: tail });
+        }
+        if (turnGuard.truncated) {
+          console.warn(
+            "[chat:turn-guard] 모델이 가짜 턴을 이어써서 응답을 잘라냄",
+            { sessionId: session.id, sdkSessionId }
+          );
+          // 잘라낸 건 화면·messages 테이블뿐이고, 오염된 assistant 턴은 SDK의
+          // jsonl에 그대로 남는다. 그대로 두면 다음 resume 때 모델이 자기 출력을
+          // 예시로 다시 보고 패턴이 굳는다(래칫). 이번 사용자 메시지까지만 남긴
+          // 새 브랜치로 갈아타 그 되먹임을 끊는다.
+          if (sdkSessionId && userMessageUuid) {
+            try {
+              const forked = await forkSession(sdkSessionId, {
+                dir: rt.outputDir,
+                upToMessageId: userMessageUuid,
+              });
+              sdkSessionId = forked.sessionId;
+              send({ type: "sanitized" });
+            } catch (e) {
+              console.error("[chat:forkSession failed]", e);
+            }
+          }
+        }
+
         db.prepare(
           "UPDATE sessions SET sdk_session_id = ?, context_tokens = COALESCE(?, context_tokens), context_max_tokens = COALESCE(?, context_max_tokens), model = COALESCE(?, model) WHERE id = ?"
         ).run(sdkSessionId, contextTokens, contextMaxTokens, model ?? null, session.id);
@@ -232,6 +299,8 @@ export async function POST(req: NextRequest) {
           message: e instanceof Error ? e.message : String(e),
         });
       } finally {
+        // 에러로 빠져나온 경우 result를 못 받았을 수 있다 — 생성기가 매달리지 않게 닫는다
+        closeInput();
         clearInterval(heartbeat);
         controller.close();
       }
