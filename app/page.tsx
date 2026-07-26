@@ -13,6 +13,24 @@ const MODELS = [
   { key: "haiku", label: "Haiku" },
 ];
 
+/**
+ * 뷰포트 폭 질의.
+ * 토글 버튼이 "지금 실제로 보이는 패널"의 상태를 말하게 하려면 필요하다 — 넓은 화면과
+ * 좁은 화면의 열림 상태가 서로 다르기 때문. 첫 렌더는 서버와 같게 false로 시작하고
+ * 마운트 뒤 실제 값으로 맞춘다(하이드레이션 불일치 방지).
+ */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const sync = () => setMatches(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [query]);
+  return matches;
+}
+
 type Mode = "produce" | "socratic" | "drill";
 
 interface ChatMessage {
@@ -382,21 +400,35 @@ export default function ChatPage() {
     localStorage.removeItem(LAST_SESSION_KEY);
   }
 
-  // 사이드바 열림 상태: null = 기본값 (데스크톱 열림, 모바일 닫힘)
+  // 좌측 주제 패널은 md, 우측 산출물 패널은 lg에서 인라인으로 붙는다.
+  // 산출물 쪽 기준이 더 높은 건 채팅 폭을 더 먹기 때문
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const isWide = useMediaQuery("(min-width: 1024px)");
+
+  // 열림 상태: null = 기본값 (넓은 화면 열림, 좁은 화면 닫힘)
   const [sidebarOpen, setSidebarOpen] = useState<boolean | null>(null);
   const desktopSidebarOpen = sidebarOpen ?? true;
   const mobileSidebarOpen = sidebarOpen ?? false;
+  /** 지금 이 화면 폭에서 실제로 보이고 있는 상태 — 버튼 라벨·aria는 이걸 따라야 한다 */
+  const sidebarShown = isDesktop ? desktopSidebarOpen : mobileSidebarOpen;
 
-  const isDesktop = () =>
-    typeof window !== "undefined" &&
-    window.matchMedia("(min-width: 768px)").matches;
-
-  const toggleSidebar = () =>
-    setSidebarOpen(!(isDesktop() ? desktopSidebarOpen : mobileSidebarOpen));
+  const toggleSidebar = () => setSidebarOpen(!sidebarShown);
 
   // 모바일 드로어에서 항목을 고르면 드로어를 닫는다
   const closeSidebarOnMobile = () => {
-    if (!isDesktop()) setSidebarOpen(false);
+    if (!isDesktop) setSidebarOpen(false);
+  };
+
+  const [artifactsOpen, setArtifactsOpen] = useState<boolean | null>(null);
+  const wideArtifactsOpen = artifactsOpen ?? true;
+  const narrowArtifactsOpen = artifactsOpen ?? false;
+  const artifactsShown = isWide ? wideArtifactsOpen : narrowArtifactsOpen;
+
+  const toggleArtifacts = () => setArtifactsOpen(!artifactsShown);
+
+  // 좁은 화면 드로어에서 산출물을 열면 드로어를 닫는다
+  const closeArtifactsOnNarrow = () => {
+    if (!isWide) setArtifactsOpen(false);
   };
 
   const sidebar = (
@@ -417,25 +449,90 @@ export default function ChatPage() {
     />
   );
 
+  // 이 세션 산출물 + 같은 주제의 과거 산출물. 넓은 화면은 인라인, 좁은 화면은 드로어로 같은 내용을 보여준다
+  const olderRelated = related.filter(
+    (r) => !artifacts.some((a) => a.id === r.id)
+  );
+  const hasArtifacts = artifacts.length > 0 || related.length > 0;
+
+  const artifactPanel = (
+    <>
+      <h2 className="mb-2 text-sm font-semibold">산출물</h2>
+      {artifacts.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-1 text-[11px] font-medium text-emerald-500">
+            이 세션에서 생성
+          </div>
+          <ul className="space-y-1">
+            {artifacts.map((a) => (
+              <li key={a.id}>
+                <a
+                  href={`/artifacts/${a.id}`}
+                  target="_blank"
+                  onClick={closeArtifactsOnNarrow}
+                  className="block truncate rounded px-1 py-0.5 text-xs text-blue-500 hover:bg-blue-500/10"
+                  title={a.title}
+                >
+                  {a.kind === "html" ? "🌐" : "📝"} {a.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {olderRelated.length > 0 && (
+        <div>
+          <div className="mb-1 text-[11px] font-medium text-neutral-500">
+            이 주제의 기존 산출물
+          </div>
+          <ul className="space-y-1">
+            {olderRelated.map((r) => (
+              <li key={r.id}>
+                <a
+                  href={`/artifacts/${r.id}`}
+                  target="_blank"
+                  onClick={closeArtifactsOnNarrow}
+                  className="block rounded px-1 py-0.5 text-xs hover:bg-blue-500/10"
+                  title={r.title}
+                >
+                  <span className="block truncate text-blue-500">
+                    {r.kind === "html" ? "🌐" : "📝"} {r.title}
+                  </span>
+                  <span className="block truncate text-[10px] text-neutral-500">
+                    {r.taxonomy_path}
+                    {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ""}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="flex h-full flex-col">
       {/* 채팅 툴바: 채팅 전용 컨트롤 (전역 네비는 layout의 AppHeader) */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-4 py-1.5 dark:border-neutral-800">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-neutral-200 px-4 py-1.5 dark:border-neutral-800">
         <button
           onClick={toggleSidebar}
           className="rounded p-1 text-lg leading-none text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
-          title={desktopSidebarOpen ? "주제·세션 패널 닫기" : "주제·세션 패널 열기"}
+          title={sidebarShown ? "주제·세션 패널 닫기" : "주제·세션 패널 열기"}
           aria-label="주제·세션 패널 토글"
-          aria-expanded={desktopSidebarOpen}
+          aria-expanded={sidebarShown}
         >
-          {desktopSidebarOpen ? "«" : "☰"}
+          {sidebarShown ? "«" : "☰"}
         </button>
-        <div className="ml-auto flex items-center gap-2">
-          <UsageHud
-            refreshKey={hudKey}
-            contextTokens={contextTokens}
-            contextMaxTokens={contextMaxTokens}
-          />
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+          {/* 사용량은 참고 정보 — 폭이 모자라면 가장 먼저 접는다 */}
+          <span className="hidden sm:block">
+            <UsageHud
+              refreshKey={hudKey}
+              contextTokens={contextTokens}
+              contextMaxTokens={contextMaxTokens}
+            />
+          </span>
           <select
             value={model}
             disabled={busy}
@@ -485,13 +582,35 @@ export default function ChatPage() {
             새 대화
           </button>
           {sessionId !== null && (
+            /* 파괴적 동작 — 옆 버튼과 붙어 잘못 눌리지 않게 구분선으로 떼어 놓는다 */
+            <span className="border-l border-neutral-200 pl-2 dark:border-neutral-800">
+              <button
+                onClick={() =>
+                  setConfirmAction({ kind: "delete", id: sessionId })
+                }
+                disabled={busy}
+                className="text-sm text-red-400 hover:underline disabled:opacity-40"
+                title="현재 세션을 목록에서 삭제"
+              >
+                삭제
+              </button>
+            </span>
+          )}
+          {/* 우측 패널 토글은 그 패널이 붙는 쪽 끝에 둔다 (좌측 ☰ 와 대칭) */}
+          {hasArtifacts && (
             <button
-              onClick={() => setConfirmAction({ kind: "delete", id: sessionId })}
-              disabled={busy}
-              className="text-sm text-red-400 hover:underline disabled:opacity-40"
-              title="현재 세션을 목록에서 삭제"
+              onClick={toggleArtifacts}
+              title={artifactsShown ? "산출물 패널 닫기" : "산출물 패널 열기"}
+              aria-label="산출물 패널 토글"
+              aria-expanded={artifactsShown}
+              className={
+                "rounded border px-2.5 py-1 text-sm " +
+                (artifactsShown
+                  ? "border-emerald-400 text-emerald-500 hover:bg-emerald-500/10"
+                  : "border-neutral-300 text-neutral-600 hover:bg-neutral-200 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800")
+              }
             >
-              삭제
+              산출물 {artifacts.length + olderRelated.length}
             </button>
           )}
         </div>
@@ -620,21 +739,7 @@ export default function ChatPage() {
             </div>
           )
         )}
-        {artifacts.length > 0 && (
-          <div className="rounded-lg border border-green-500/40 bg-green-500/5 p-3 text-sm">
-            <div className="mb-1 font-semibold">생성된 산출물</div>
-            {artifacts.map((a) => (
-              <a
-                key={a.id}
-                href={`/artifacts/${a.id}`}
-                target="_blank"
-                className="block text-blue-500 hover:underline"
-              >
-                {a.kind === "html" ? "🌐" : "📝"} {a.title}
-              </a>
-            ))}
-          </div>
-        )}
+        {/* 산출물 링크는 우측 패널에서만 보여준다 — 대화 흐름을 끊지 않게 */}
         {compactNotice && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-400/40 bg-blue-500/5 p-3 text-sm">
             <span>
@@ -728,62 +833,24 @@ export default function ChatPage() {
         </form>
       </main>
 
-      {/* 우측 산출물 패널: 이 세션 산출물 + 같은 주제의 과거 산출물 */}
-      {(artifacts.length > 0 || related.length > 0) && (
+      {/* 넓은 화면: 인라인 우측 패널 */}
+      {hasArtifacts && wideArtifactsOpen && (
         <aside className="slim-scroll hidden w-64 shrink-0 overflow-y-auto border-l border-neutral-200 p-3 lg:block dark:border-neutral-800">
-          <h2 className="mb-2 text-sm font-semibold">산출물</h2>
-          {artifacts.length > 0 && (
-            <div className="mb-4">
-              <div className="mb-1 text-[11px] font-medium text-emerald-500">
-                이 세션에서 생성
-              </div>
-              <ul className="space-y-1">
-                {artifacts.map((a) => (
-                  <li key={a.id}>
-                    <a
-                      href={`/artifacts/${a.id}`}
-                      target="_blank"
-                      className="block truncate rounded px-1 py-0.5 text-xs text-blue-500 hover:bg-blue-500/10"
-                      title={a.title}
-                    >
-                      {a.kind === "html" ? "🌐" : "📝"} {a.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {related.filter((r) => !artifacts.some((a) => a.id === r.id))
-            .length > 0 && (
-            <div>
-              <div className="mb-1 text-[11px] font-medium text-neutral-500">
-                이 주제의 기존 산출물
-              </div>
-              <ul className="space-y-1">
-                {related
-                  .filter((r) => !artifacts.some((a) => a.id === r.id))
-                  .map((r) => (
-                    <li key={r.id}>
-                      <a
-                        href={`/artifacts/${r.id}`}
-                        target="_blank"
-                        className="block rounded px-1 py-0.5 text-xs hover:bg-blue-500/10"
-                        title={r.title}
-                      >
-                        <span className="block truncate text-blue-500">
-                          {r.kind === "html" ? "🌐" : "📝"} {r.title}
-                        </span>
-                        <span className="block truncate text-[10px] text-neutral-500">
-                          {r.taxonomy_path}
-                          {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ""}
-                        </span>
-                      </a>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
+          {artifactPanel}
         </aside>
+      )}
+      {/* 좁은 화면: 우측 오버레이 드로어 — 채팅 폭을 뺏지 않는다 */}
+      {hasArtifacts && narrowArtifactsOpen && (
+        <div className="lg:hidden">
+          <div
+            className="fixed inset-0 z-30 bg-black/40"
+            onClick={() => setArtifactsOpen(false)}
+            aria-hidden
+          />
+          <aside className="slim-scroll fixed inset-y-0 right-0 z-40 w-72 overflow-y-auto border-l border-neutral-200 bg-background p-3 dark:border-neutral-800">
+            {artifactPanel}
+          </aside>
+        </div>
       )}
       </div>
 
